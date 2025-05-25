@@ -109,7 +109,7 @@ unfixable = [
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.isort]
-known-first-party = ["search_api", "flask_jwt_oidc", "structured_logging", "gcp_queue"]
+known-first-party = ["flask_jwt_oidc", "structured_logging"]
 
 [tool.ruff.lint.flake8-quotes]
 docstring-quotes = "double"
