@@ -31,7 +31,7 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""API endpoint for resyncing entity records in solr."""
+"""API endpoint for resyncing records in solr."""
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 
@@ -39,19 +39,20 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_cors import cross_origin
 
 from namex_solr_api.exceptions import bad_request_response, exception_response
-from namex_solr_api.models import SolrDoc, User
-from namex_solr_api.services import jwt
+from namex_solr_api.models import SolrDoc, SolrDocEvent, User
+from namex_solr_api.services import jwt, solr
+from namex_solr_api.services.namex_solr.doc_models import NameField, PCField, PossibleConflict
 
 bp = Blueprint("RESYNC", __name__, url_prefix="/resync")
 
 
 @bp.post("")
 @cross_origin(origins="*")
-@jwt.requires_roles([User.Role.SYSTEM.value])
+@jwt.requires_roles([User.Role.system.value])
 def resync_solr():
     """Resync solr docs from the given date or identifiers given."""
     try:
-        request_json = request.json
+        request_json: dict = request.json
         from_datetime = datetime.now(UTC)
         minutes_offset = request_json.get("minutesOffset", None)
         identifiers_to_resync = request_json.get("identifiers", None)
@@ -71,8 +72,7 @@ def resync_solr():
 
         if identifiers_to_resync:
             current_app.logger.debug(f"Resyncing: {identifiers_to_resync}")
-            # TODO: call resync service
-            # resync_business_solr(identifiers_to_resync)
+            _resync_solr(identifiers_to_resync)
         else:
             current_app.logger.debug("No records to resync.")
 
@@ -80,3 +80,25 @@ def resync_solr():
 
     except Exception as exception:
         return exception_response(exception)
+
+
+def _resync_solr(identifiers: list[str]):
+    """Re-apply the docs for the given identifiers."""
+    possible_conflicts: list[PossibleConflict] = []
+    doc_events: list[SolrDocEvent] = []
+    for identifier in identifiers:
+        doc_update = SolrDoc.find_most_recent_by_entity_id(identifier)
+        possible_conflicts.append(PossibleConflict(**doc_update.doc))
+        # add separate event for resync
+        doc_event = SolrDocEvent(event_type=SolrDocEvent.Type.RESYNC, solr_doc_id=doc_update.id).save()
+        doc_events.append(doc_event)
+    try:
+        if len(possible_conflicts) > 0:
+            solr.create_or_replace_docs(possible_conflicts, additive=False)
+            SolrDocEvent.update_events_status(SolrDocEvent.Status.COMPLETE, doc_events)
+
+    except Exception as err:
+        # log / update event / pass err
+        current_app.logger.debug("Failed to RESYNC solr for %s", identifiers)
+        SolrDocEvent.update_events_status(SolrDocEvent.Status.ERROR, doc_events)
+        raise err

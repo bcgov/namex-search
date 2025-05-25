@@ -110,7 +110,6 @@ class Solr:
 
         response = None
         try:
-            print(json_data)
             if method == "GET":
                 response = session.get(url, params=params, timeout=timeout)
             elif method == "POST" and json_data:
@@ -162,7 +161,6 @@ class Solr:
         """Delete solr docs from the core."""
         payload = "<delete><query>"
         if unique_keys:
-            # TODO: set unique key in init
             payload += f"id:{unique_keys[0].upper()}"
         for key in unique_keys[1:]:
             payload += f" OR id:{key.upper()}"

@@ -38,37 +38,40 @@ from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 
 from .add_category_filters import add_category_filters
 
-def namex_search(params: QueryParams, solr: NamexSolr):
-    """Return the list of businesses from Solr that match the query."""
+
+def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
+    """Return the list of possible conflicts from Solr that match the query."""
     # initialize payload with base doc query (init query / filter)
     initial_queries = solr.query_builder.build_base_query(
         query=params.query,
         fields=params.query_fields,
         boost_fields=params.query_boost_fields,
-        fuzzy_fields=params.query_fuzzy_fields)
+        fuzzy_fields=params.query_fuzzy_fields,
+        synonym_fields=params.query_synonym_fields,
+        is_child_search=is_name_search)
     # boosts for term order result ordering
-    # TODO: update for namex
-    # initial_queries["query"] += f' OR ({BusinessField.NAME_Q.value}:"{params.query["value"]}"~5^5)'
-    # initial_queries["query"] += f' OR ({BusinessField.NAME_STEM_AGRO.value}:"{params.query["value"]}"~10^3)'
-    # initial_queries["query"] += f' OR ({BusinessField.IDENTIFIER_Q_EDGE.value}:"{params.query["value"]}"^5)'
-
+    if is_name_search and params.query["value"] and len(params.query["value"].split()) > 1:
+        # this is a name search and the searched value is 2 terms or more
+        initial_queries["query"] = (f'({initial_queries["query"]})' +
+            f' AND (({NameField.NAME_Q.value}:"{params.query["value"]}"~5^5)' +
+            f' OR ({NameField.NAME_Q_AGRO.value}:"{params.query["value"]}"~10^3)' +
+            f' OR ({NameField.NAME_Q_SYN.value}:"{params.query["value"]}"~10^2))'
+        )
     # add defaults
+    parent_field = NameField.PARENT_TYPE.value if is_name_search else PCField.TYPE.value
     solr_payload = {
         **initial_queries,
         "queries": {
-            "parents": f"{PCField.NAMES.value}:*",
-            "parentFilters": " AND ".join(initial_queries["filter"])},
-        "facet": {
-            # TODO: update for names -- or remove
-            # **solr.query_builder.build_facet(BusinessField.STATE, False),
-            # **solr.query_builder.build_facet(BusinessField.TYPE, False)
+            "parents": f"{parent_field}:*",
+            "parentFilters": " AND ".join(initial_queries["filter"]),
         },
         "fields": params.fields
     }
     # base doc faceted filters
     add_category_filters(solr_payload=solr_payload,
                          categories=params.categories,
-                         is_nested=False,
+                         is_child=False,
+                         is_child_search=is_name_search,
                          solr=solr)
     # child filter queries
     if child_query := solr.query_builder.build_child_query(params.child_query):
@@ -76,7 +79,8 @@ def namex_search(params: QueryParams, solr: NamexSolr):
     # child doc faceted filter queries
     add_category_filters(solr_payload=solr_payload,
                          categories=params.child_categories,
-                         is_nested=True,
+                         is_child=True,
+                         is_child_search=is_name_search,
                          solr=solr)
 
     return solr.query(solr_payload, params.start, params.rows)

@@ -36,6 +36,7 @@ from dataclasses import asdict
 
 from flask import Flask
 
+from namex_solr_api.models import SolrSynonymList
 from namex_solr_api.services.base_solr import Solr
 from namex_solr_api.services.base_solr.utils import QueryBuilder
 
@@ -50,21 +51,32 @@ class NamexSolr(Solr):
         super().__init__(config_prefix, app)
         self.query_builder = QueryBuilder(
             identifier_field_values=[],
-            unique_parent_field=PCField.STATE)
+            unique_parent_field=PCField.TYPE,
+            synonym_field_map={NameField.NAME_Q_SYN: SolrSynonymList.Type.ALL})
 
         # fields
         self.resp_fields = [
             PCField.CORP_NUM.value,
-            PCField.CORP_START_DATE.value,
             PCField.JURISDICTION.value,
             PCField.NR_NUM.value,
-            PCField.NR_START_DATE.value,
+            PCField.START_DATE.value,
             PCField.STATE.value,
+            PCField.TYPE.value,
             PCField.NAMES.value,
             "[child]",
             NameField.NAME.value,
             NameField.NAME_STATE.value,
             NameField.SUBMIT_COUNT.value
+        ]
+        self.resp_fields_nested = [
+            NameField.NAME.value,
+            NameField.NAME_STATE.value,
+            NameField.SUBMIT_COUNT.value,
+            NameField.PARENT_ID.value,
+            NameField.PARENT_JURISDICTION.value,
+            NameField.PARENT_START_DATE.value,
+            NameField.PARENT_STATE.value,
+            NameField.PARENT_TYPE.value,
         ]
 
     def create_or_replace_docs(self,

@@ -45,8 +45,17 @@ class NameField(BaseEnum):
     NAME = "name"
     NAME_STATE = "name_state"
     SUBMIT_COUNT = "submit_count"
-    # TODO: fill out query fields
-    NAME_Q = "name_q"
+    PARENT_ID = "parent_id"
+    PARENT_JURISDICTION = "parent_jurisdiction"
+    PARENT_START_DATE = "parent_start_date"
+    PARENT_STATE = "parent_state"
+    PARENT_TYPE = "parent_type"
+    # query fields
+    NAME_Q = "name_q"  # minimal stem
+    NAME_Q_SINGLE = "name_q_single_term"  # ngram
+    NAME_Q_AGRO = "name_q_stem_agro"  # aggressive stem
+    NAME_Q_SYN = "name_q_synonym"  # synonym
+    NAME_Q_XTRA = "name_q_xtra"  # classic tokenizer on query (others using whitespace - effects periods, dashes etc.)
 
     # common built in across docs
     SCORE = "score"
@@ -55,7 +64,15 @@ class NameField(BaseEnum):
 @dataclass
 class Name:
     """Class representation for a solr name doc."""
-    id: str
     name: str
+    # TODO: review existing states (A, C, R, APPROVED, CONDITION) -- are A/APPROVED the same? Are C/CONDITION the same?
+    # adding new states for corp name: 'CORP', and nr name: 'D'
     name_state: str
-    submit_count: int
+    id: str | None = None  # rely on Solr to create the id
+    submit_count: int | None = None
+    parent_id: str | None = None  # corp num or nr num
+    parent_jurisdiction: str | None = None
+    parent_start_date: str | None = None
+    parent_state: str | None = None
+    parent_type: str | None = None
+    

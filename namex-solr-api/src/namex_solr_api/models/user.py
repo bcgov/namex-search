@@ -43,7 +43,7 @@ from enum import auto
 from typing import TYPE_CHECKING
 
 from flask import current_app
-from sqlalchemy import String, func
+from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from namex_solr_api.common.base_enum import BaseEnum
@@ -64,7 +64,7 @@ class User(Base):
 
     class Role(BaseEnum):
         """Enum for the user roles."""
-        SYSTEM = auto()
+        system = auto()
 
     __tablename__ = "users"
 
@@ -77,7 +77,7 @@ class User(Base):
     sub: Mapped[str] = mapped_column(String(36), unique=True, index=True)
     iss: Mapped[str] = mapped_column(String(1024))
     unique_user_key: Mapped[str] = mapped_column(String(256), unique=True, index=True)
-    creation_date: Mapped[datetime] = mapped_column(default=func.now())
+    creation_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
     # Relationships
     searches: Mapped[list['SearchHistory']] = relationship(back_populates="submitter")
     updated_docs: Mapped[list['SolrDoc']] = relationship(back_populates="submitter")

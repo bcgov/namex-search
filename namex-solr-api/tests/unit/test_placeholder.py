@@ -31,18 +31,9 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Category filter methods."""
-from namex_solr_api.services.namex_solr import NamexSolr
-from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
+"""Test Suite to ensure reindexing works as expected."""
 
-
-def add_category_filters(solr_payload: dict,
-                         categories: dict[NameField | PCField, list[str]],
-                         is_child: bool,
-                         is_child_search: bool,
-                         solr: NamexSolr):
-    """Attach filter queries for categories to the params."""
-    for category, category_filters in categories.items():
-        if category_filters:
-            filter_str = solr.query_builder.build_facet_query(category, category_filters, is_child, is_child_search)
-            solr_payload["filter"].append(filter_str)
+def test_placeholder(app):
+    """Placeholder test."""
+    # TODO: flush out unit testing
+    assert True

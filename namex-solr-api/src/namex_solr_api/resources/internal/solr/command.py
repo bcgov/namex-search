@@ -44,7 +44,7 @@ bp = Blueprint("COMMAND", __name__, url_prefix="/command")
 
 @bp.post("")
 @cross_origin(origins="*")
-@jwt.requires_roles([User.Role.SYSTEM.value])
+@jwt.requires_roles([User.Role.system.value])
 def replication_command():
     """Execute a replication command on solr."""
     try:

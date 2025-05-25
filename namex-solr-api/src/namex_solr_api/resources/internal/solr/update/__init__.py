@@ -42,20 +42,24 @@ from flask_cors import cross_origin
 from namex_solr_api.exceptions import exception_response
 from namex_solr_api.models import SolrDoc, SolrDocEvent, User
 from namex_solr_api.services import jwt
+from namex_solr_api.services.namex_solr.doc_models import Name, PossibleConflict
 
 from .resync import bp as resync_bp
 from .sync import bp as sync_bp
+from .synonyms import bp as synonyms_bp
 
 bp = Blueprint("UPDATE", __name__, url_prefix="/update")
 bp.register_blueprint(resync_bp)
 bp.register_blueprint(sync_bp)
+bp.register_blueprint(synonyms_bp)
 
 
 @bp.put("")
 @cross_origin(origins="*")
-@jwt.requires_roles([User.Role.SYSTEM.value])
-def update_nr():
-    """Add/Update business in solr."""
+@jwt.requires_roles([User.Role.system.value])
+@jwt.requires_auth
+def update_possible_conflict():
+    """Add/Update possible conflict in solr."""
     try:
         request_json: dict = request.json
         # TODO: validate request
@@ -65,14 +69,41 @@ def update_nr():
 
         user = User.get_or_create_user_by_jwt(g.jwt_oidc_token_info)
 
-        # TODO: parse NR / save
-        # business = _parse_business(request_json)
-        # commit business. Ensures other flows (i.e. resync) will use the current data
-        # solr_doc = SolrDoc(doc=asdict(business), identifier=business.identifier, _submitter_id=user.id).save()
-        # SolrDocEvent(event_type=SolrDocEvent.Type.UPDATE, solr_doc_id=solr_doc.id).save()
+        possible_conflict = _parse_conflict(request_json)
+        # Commit Possible Conflict. Ensures other flows (i.e. resync) will use the current data
+        solr_doc = SolrDoc(doc=asdict(possible_conflict), entity_id=possible_conflict.id, submitter_id=user.id)
+        solr_doc.save()
+        SolrDocEvent(event_type=SolrDocEvent.Type.UPDATE.value, solr_doc_id=solr_doc.id).save()
         # SOLR update will be triggered by job (does a frequent bulk update to solr)
 
         return jsonify({"message": "Update accepted."}), HTTPStatus.ACCEPTED
 
     except Exception as exception:
         return exception_response(exception)
+
+
+def _parse_names(data: dict) -> list[Name]:
+    """Parse the name data as a list of Name."""
+    if data['type'] == 'CORP':
+        return [Name(name=data['name'], name_state="CORP")]
+
+    names: list[Name] = []
+    for name_data in data['names']:
+        names.append(Name(name=name_data['name'],
+                          name_state=name_data['name_state_type_cd'],
+                          submit_count=name_data['submit_count']))
+    return names
+
+
+def _parse_conflict(data: dict) -> PossibleConflict:
+    """Parse the data as a PossibleConflict."""
+    return PossibleConflict(
+        id=data['nr_num'] if data['type'] == 'NR' else data['corp_num'],
+        names=_parse_names(data),
+        state=data['state_type_cd'],
+        type=data['type'],
+        corp_num=data.get('corp_num'),
+        jurisdiction=data.get('jurisdiction'),
+        nr_num=data.get('nr_num'),
+        start_date=data.get('start_date'),
+    )

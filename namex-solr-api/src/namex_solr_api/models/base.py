@@ -32,6 +32,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Base Model."""
+from datetime import UTC, datetime
+
 from .db import db
 
 
@@ -59,3 +61,8 @@ class Base(db.Model):
     def rollback():
         """RollBack the session."""
         db.session.rollback()
+    
+    @staticmethod
+    def default_datetime_now():
+        """Return the utcnow value"""
+        return datetime.now(UTC)

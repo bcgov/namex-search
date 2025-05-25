@@ -31,12 +31,12 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-# TODO: add search endpoint replicating logic from bor
-# TODO: add search endpoints replicating namex queries
+# TODO: add search endpoints replicating namex queries ? Maybe don't need this
 """Exposes all of the search endpoints in Flask-Blueprint style."""
 from http import HTTPStatus
 
 from flask import Blueprint, g, jsonify, request
+from flask.globals import request_ctx
 from flask_cors import cross_origin
 
 from namex_solr_api.exceptions import bad_request_response, exception_response
@@ -49,12 +49,119 @@ from namex_solr_api.services.namex_solr.utils import namex_search
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
 
 
-@bp.post("/possible-conflicts")
+@bp.post("/possible-conflict-names")
 @cross_origin(origins="*")
-# TODO: auth add back in
-# @jwt.requires_auth
-def possible_conflicts():
-    """Return a list of possible conflict results from solr."""
+@jwt.requires_auth
+def possible_conflict_names():
+    """Return a list of possible conflict name results from solr."""
+    try:
+        # NOTE: request_ctx.current_user is set by jwt.requires_auth
+        user = User.get_or_create_user_by_jwt(request_ctx.current_user)
+        request_json = request.json
+        # TODO: validate request
+        # if errors:
+        #     return bad_request_response("Errors processing request.", errors)
+
+        # set base query params
+        query_json: dict = request_json.get("query", {})
+        value = query_json.get("value")
+        query = {
+            "value": prep_query_str(value),
+            PCField.CORP_NUM_Q.value: prep_query_str(query_json.get(PCField.CORP_NUM.value, "")),
+            PCField.NR_NUM_Q.value: prep_query_str(query_json.get(PCField.NR_NUM.value, ""))
+        }
+        # set faceted category params
+        categories_json: dict = request_json.get("categories", {})
+        # TODO: verify these states
+        conflict_states = ["ACT", "LIQ", "APPROVED", "CONDITION"]
+        categories = {
+            PCField.JURISDICTION: categories_json.get(PCField.JURISDICTION.value, None),
+            PCField.STATE: categories_json.get(PCField.STATE.value, conflict_states)
+        }
+        # set nested child query params
+        child_query = {
+            NameField.NAME_Q_SINGLE.value: prep_query_str(query_json.get(NameField.NAME.value, ""))
+        }
+        # set nested child faceted category params
+        # TODO: verify these states
+        conflict_name_states = ["A", "C", "CORP"]
+        child_categories = {
+            NameField.NAME_STATE: categories_json.get(NameField.NAME_STATE.value, conflict_name_states)
+        }
+
+        start = request_json.get("start", solr.default_start)
+        rows = request_json.get("rows", solr.default_rows)
+
+        params = QueryParams(
+            query=query,
+            rows=rows,
+            start=start,
+            categories=categories,
+            child_query=child_query,
+            child_categories=child_categories,
+            fields=solr.resp_fields_nested,
+            query_boost_fields={
+                NameField.NAME_Q_AGRO: 2,
+                NameField.NAME_Q_SINGLE: 2,
+                NameField.NAME_Q_XTRA: 2
+            },
+            query_fields={
+                NameField.NAME_Q: "child",
+                NameField.NAME_Q_AGRO: "child",
+                NameField.NAME_Q_SINGLE: "child",
+                NameField.NAME_Q_XTRA: "child",
+            },
+            query_fuzzy_fields={
+                NameField.NAME_Q: {"short": 1, "long": 2},
+                NameField.NAME_Q_AGRO: {"short": 1, "long": 2},
+                NameField.NAME_Q_SINGLE: {"short": 1, "long": 2}
+            },
+            query_synonym_fields={
+                NameField.NAME_Q_SYN: "child"
+            },
+        )
+
+        results = namex_search(params, solr, True)
+        docs = results.get("response", {}).get("docs")
+
+        # save search in the db
+        SearchHistory(
+            query=request_json,
+            results=docs,
+            submitter_id=user.id,
+        ).save()
+
+        response = {
+            "searchResults": {
+                "queryInfo": {
+                    "categories": {
+                        **categories,
+                        **child_categories
+                    },
+                    "query": {
+                        "value": query["value"],
+                        PCField.CORP_NUM.value: query[PCField.CORP_NUM_Q.value],
+                        PCField.NR_NUM.value: query[PCField.NR_NUM_Q.value],
+                        NameField.NAME.value: child_query[NameField.NAME_Q_SINGLE.value]
+                    },
+                    "rows": rows or solr.default_rows,
+                    "start": start or solr.default_start,
+                },
+                "totalResults": results.get("response", {}).get("numFound"),
+                "results": docs,
+            },
+        }
+        return jsonify(response), HTTPStatus.OK
+
+    except Exception as exception:
+        return exception_response(exception)
+
+
+@bp.post("/nrs")
+@cross_origin(origins="*")
+@jwt.requires_auth
+def nrs():
+    """Return a list of Name Request results from solr."""
     try:
         request_json = request.json
         # TODO: validate request
@@ -66,40 +173,23 @@ def possible_conflicts():
         value = query_json.get("value")
         query = {
             "value": prep_query_str(value),
-            # TODO: add filter fields here
-            # EntityField.BN_Q.value: prep_query_str_adv(query_json.get(EntityField.BN.value, "")),
-            # EntityField.IDENTIFIER_Q.value: prep_query_str_adv(query_json.get(EntityField.IDENTIFIER.value, "")),
-            # EntityField.LEGAL_NAME_SINGLE_Q.value: prep_query_str_adv(query_json.get(EntityField.LEGAL_NAME.value, "")),
+            PCField.CORP_NUM_Q.value: prep_query_str(query_json.get(PCField.CORP_NUM.value, "")),
+            PCField.NR_NUM_Q.value: prep_query_str(query_json.get(PCField.NR_NUM.value, ""))
         }
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
         categories = {
-            # TODO: add category filter fields here
-            # EntityField.ENTITY_TYPE: categories_json.get(EntityField.ENTITY_TYPE.value, None),
-            # EntityField.LEGAL_TYPE: categories_json.get(EntityField.LEGAL_TYPE.value, None),
-            # EntityField.STATE: categories_json.get(EntityField.STATE.value, None),
+            PCField.JURISDICTION: categories_json.get(PCField.JURISDICTION.value, None),
+            PCField.STATE: categories_json.get(PCField.STATE.value, None),
+            PCField.TYPE: ["NR"]
         }
         # set nested child query params
         child_query = {
-            # TODO: add child filter fields here
-            # AddressField.ADDRESS_Q.value: prep_query_str_adv(query_json.get(EntityField.ENTITY_ADDRESSES.value, "")),
-            # EntityRoleField.RELATED_BN_Q.value: prep_query_str_adv(
-            #     roles_json.get(EntityRoleField.RELATED_BN.value, "")
-            # ),
-            # EntityRoleField.RELATED_EMAIL_Q.value: prep_query_str_adv(
-            #     roles_json.get(EntityRoleField.RELATED_EMAIL.value, "")
-            # ),
-            # EntityRoleField.RELATED_IDENTIFIER_Q.value: prep_query_str_adv(
-            #     roles_json.get(EntityRoleField.RELATED_IDENTIFIER.value, "")
-            # ),
-            # EntityRoleField.RELATED_NAME_SINGLE_Q.value: prep_query_str_adv(
-            #     roles_json.get(EntityRoleField.RELATED_NAME.value, "")
-            # ),
-            # EntityRoleField.RELATED_Q.value: prep_query_str_adv(roles_json.get("value", "")),
+            NameField.NAME_Q_SINGLE.value: prep_query_str(query_json.get(NameField.NAME.value, ""))
         }
         # set nested child faceted category params
         child_categories = {
-            # TODO: add child category filter fields here
+            NameField.NAME_STATE: categories_json.get(NameField.NAME_STATE.value, None)
         }
 
         start = request_json.get("start", solr.default_start)
@@ -114,77 +204,44 @@ def possible_conflicts():
             child_categories=child_categories,
             fields=solr.resp_fields,
             query_boost_fields={
-                # TODO: update for namex
                 NameField.NAME_Q: 2,
-                # EntityField.LEGAL_NAME_AGRO_Q: 2,
-                # EntityField.LEGAL_NAME_SINGLE_Q: 2,
-                # EntityField.LEGAL_NAME_XTRA_Q: 2,
+                NameField.NAME_Q_AGRO: 2,
+                NameField.NAME_Q_SINGLE: 2,
+                NameField.NAME_Q_XTRA: 2
             },
             query_fields={
-                # TODO: update for namex
+                PCField.NR_NUM_Q: "parent",
+                PCField.NR_NUM_Q_EDGE: "parent",
                 NameField.NAME_Q: "child",
-                # EntityField.LEGAL_NAME_AGRO_Q: "parent",
-                # EntityField.LEGAL_NAME_SINGLE_Q: "parent",
-                # EntityField.LEGAL_NAME_XTRA_Q: "parent",
-                # EntityRoleField.RELATED_EMAIL_Q: "child",
-                # AddressField.ADDRESS_Q: "child",
+                NameField.NAME_Q_AGRO: "child",
+                NameField.NAME_Q_SINGLE: "child",
+                NameField.NAME_Q_XTRA: "child",
             },
             query_fuzzy_fields={
-                # TODO: update for namex
                 NameField.NAME_Q: {"short": 1, "long": 2},
-                # EntityField.LEGAL_NAME_AGRO_Q: {"short": 1, "long": 2},
-                # EntityField.LEGAL_NAME_SINGLE_Q: {"short": 1, "long": 2},
-                # AddressField.ADDRESS_Q: {"short": 1, "long": 1},
-                # EntityRoleField.RELATED_EMAIL_Q: {"short": 1, "long": 1},
+                NameField.NAME_Q_AGRO: {"short": 1, "long": 2},
+                NameField.NAME_Q_SINGLE: {"short": 1, "long": 2}
             },
-            # TODO: update for namex
-            # query_synonym_fields={
-                # EntityField.LEGAL_NAME_SYN_Q: "parent",
-                # AddressField.ADDRESS_SYN_Q: "child"
-            # },
+            query_synonym_fields={
+                NameField.NAME_Q_SYN: "child"
+            },
         )
 
-        results = namex_search(params, solr)
+        results = namex_search(params, solr, False)
         docs = results.get("response", {}).get("docs")
 
-        # save search in the db
-        # TODO: add back in
-        # SearchHistory(
-        #     query=request_json,
-        #     results=docs,
-        #     submitter_id=user.id,
-        #     submitter_account_id=request.headers.get("Account-Id", None),
-        # ).save()
-
         response = {
-            "facets": parse_facets(results),
             "searchResults": {
                 "queryInfo": {
                     "categories": {
-                        # TODO: update for namex
                         **categories,
-                        # EntityField.ENTITY_ADDRESSES.value: address_categories,
-                        # EntityField.ROLES.value: role_categories,
+                        **child_categories
                     },
                     "query": {
                         "value": query["value"],
-                        # TODO: update for namex
-                        # EntityField.BN.value: query[EntityField.BN_Q.value],
-                        # EntityField.IDENTIFIER.value: query[EntityField.IDENTIFIER_Q.value],
-                        # EntityField.LEGAL_NAME.value: query[EntityField.LEGAL_NAME_SINGLE_Q.value],
-                        # EntityField.ENTITY_ADDRESSES.value: child_query[AddressField.ADDRESS_Q.value],
-                        # EntityField.ROLES.value: {
-                        #     EntityRoleField.RELATED_BN.value: child_query[EntityRoleField.RELATED_BN_Q.value],
-                        #     EntityRoleField.RELATED_EMAIL.value: child_query[EntityRoleField.RELATED_EMAIL_Q.value],
-                        #     EntityRoleField.RELATED_IDENTIFIER.value: child_query[
-                        #         EntityRoleField.RELATED_IDENTIFIER_Q.value
-                        #     ],
-                        #     EntityRoleField.RELATED_NAME.value: child_query[
-                        #         EntityRoleField.RELATED_NAME_SINGLE_Q.value
-                        #     ],
-                        #     EntityRoleField.ROLE_DATES.value: child_date_ranges,
-                        #     "value": child_query[EntityRoleField.RELATED_Q.value],
-                        # },
+                        PCField.CORP_NUM.value: query[PCField.CORP_NUM_Q.value],
+                        PCField.NR_NUM.value: query[PCField.NR_NUM_Q.value],
+                        NameField.NAME.value: child_query[NameField.NAME_Q_SINGLE.value]
                     },
                     "rows": rows or solr.default_rows,
                     "start": start or solr.default_start,
@@ -193,7 +250,6 @@ def possible_conflicts():
                 "results": docs,
             },
         }
-
         return jsonify(response), HTTPStatus.OK
 
     except Exception as exception:

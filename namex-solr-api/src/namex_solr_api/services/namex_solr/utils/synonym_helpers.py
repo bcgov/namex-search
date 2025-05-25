@@ -31,18 +31,17 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Category filter methods."""
-from namex_solr_api.services.namex_solr import NamexSolr
-from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
+"""Manages common solr synonym payload build methods."""
+from namex_solr_api.models import SolrSynonymList
 
 
-def add_category_filters(solr_payload: dict,
-                         categories: dict[NameField | PCField, list[str]],
-                         is_child: bool,
-                         is_child_search: bool,
-                         solr: NamexSolr):
-    """Attach filter queries for categories to the params."""
-    for category, category_filters in categories.items():
-        if category_filters:
-            filter_str = solr.query_builder.build_facet_query(category, category_filters, is_child, is_child_search)
-            solr_payload["filter"].append(filter_str)
+def _get_synonyms(synonym_type: SolrSynonymList.Type) -> dict[str, list[str]]:
+    """Return all synonyms in the db for the given type as a dictionary."""
+    return {
+        x.synonym: x.synonym_list for x in SolrSynonymList.find_all_by_synonym_type(synonym_type)
+    }
+
+
+def get_synonyms() -> dict[SolrSynonymList.Type, dict[str, list[str]]]:
+    """Return all synonyms used for SOLR queries."""
+    return {SolrSynonymList.Type.ALL: _get_synonyms(SolrSynonymList.Type.ALL)}

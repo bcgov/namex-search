@@ -37,7 +37,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, ForeignKey, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,7 +57,7 @@ class SolrDoc(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     doc = Column(JSONB, nullable=False)
     entity_id: Mapped[str] = mapped_column(String(50), index=True)
-    submission_date: Mapped[datetime] = mapped_column(default=func.now(), index=True)
+    submission_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), index=True)
 
     submitter_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
     submitter: Mapped['User'] = relationship(back_populates='updated_docs')

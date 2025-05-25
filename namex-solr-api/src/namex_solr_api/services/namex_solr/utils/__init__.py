@@ -33,3 +33,4 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """This module manages util methods for the NameX solr service."""
 from .namex_search_helper import namex_search
+from .synonym_helpers import get_synonyms

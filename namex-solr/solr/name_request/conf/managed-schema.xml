@@ -713,16 +713,16 @@
   </fieldType>
   <!-- NameX fields -->
   <!-- Name Request docs (parent) -->
-  <field name="corp_num" type="string" indexed="true" stored="true"/>
-  <!-- <field name="corp_num_q" type="single_word_ngram" indexed="true" stored="false"/> -->
-  <!-- <field name="corp_num_q_edge" type="single_word_edgeNgram" indexed="true" stored="false"/> -->
-  <field name="corp_start_date" type="datetime" indexed="true" stored="true"/>
-  <field name="nr_num" type="string" indexed="true" stored="true"/>
-  <!-- <field name="nr_num_q" type="single_word_ngram" indexed="true" stored="false"/> -->
-  <!-- <field name="nr_num_q_edge" type="single_word_edgeNgram" indexed="true" stored="false"/> -->
-  <field name="nr_start_date" type="datetime" indexed="true" stored="true"/>
+  <field name="corp_num" type="string" indexed="false" stored="true"/>
+  <field name="corp_num_q" type="single_word_ngram" indexed="true" stored="false"/>
+  <field name="corp_num_q_edge" type="single_word_edgeNgram" indexed="true" stored="false"/>
+  <field name="nr_num" type="string" indexed="false" stored="true"/>
+  <field name="nr_num_q" type="single_word_ngram" indexed="true" stored="false"/>
+  <field name="nr_num_q_edge" type="single_word_edgeNgram" indexed="true" stored="false"/>
   <field name="jurisdiction" type="string" docValues="true" indexed="true" stored="true"/>
+  <field name="start_date" type="datetime" indexed="true" stored="true"/>
   <field name="state" type="string" docValues="true" indexed="true" stored="true"/>
+  <field name="type" type="string" docValues="true" indexed="true" stored="true"/>
   <field name="names" type="string" indexed="true" stored="true" multiValued="true"/>
   <!-- Name docs (under 'names') -->
   <field name="name" type="string" indexed="false" stored="true"/>
@@ -733,7 +733,16 @@
   <field name="name_q_xtra" type="text_extra" indexed="true" stored="false"/>
   <field name="name_state" type="string" docValues="true" indexed="true" stored="true"/>
   <field name="submit_count" type="pint" stored="true"/>
+  <field name="parent_id" type="string" indexed="false" stored="true"/>
+  <field name="parent_jurisdiction" type="string" indexed="false" stored="true"/>
+  <field name="parent_start_date" type="string" indexed="false" stored="true"/>
+  <field name="parent_state" type="string" indexed="false" stored="true"/>
+  <field name="parent_type" type="string" indexed="false" stored="true"/>
   <!-- NameX copy fields -->
+  <copyField source="corp_num" dest="corp_num_q"/>
+  <copyField source="corp_num" dest="corp_num_q_edge"/>
+  <copyField source="nr_num" dest="nr_num_q"/>
+  <copyField source="nr_num" dest="nr_num_q_edge"/>
   <copyField source="name" dest="name_q"/>
   <copyField source="name" dest="name_q_single_term"/>
   <copyField source="name" dest="name_q_stem_agro"/>

@@ -37,7 +37,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, ForeignKey, func
+from sqlalchemy import Column, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,9 +53,9 @@ class SearchHistory(Base):
     __tablename__ = "search_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    query: Mapped[str]
+    query = Column(JSONB, nullable=False)
     results = Column(JSONB, nullable=False)
-    search_date: Mapped[datetime] = mapped_column(default=func.now())
+    search_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
 
     # Relationships
     submitter_id: Mapped[int] = mapped_column(ForeignKey('users.id'))

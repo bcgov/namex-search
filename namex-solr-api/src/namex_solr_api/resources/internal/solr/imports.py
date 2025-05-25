@@ -47,8 +47,7 @@ bp = Blueprint("IMPORT", __name__, url_prefix="/import")
 
 @bp.put("")
 @cross_origin(origins="*")
-# TODO: auth add back in
-# @jwt.requires_roles([User.Role.SYSTEM.value])
+@jwt.requires_roles([User.Role.system.value])
 def import_possible_conflicts():
     """Import 'possible conflicts' into namex search SOLR."""
     try:

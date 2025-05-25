@@ -620,8 +620,17 @@
 
        Not all Request Handlers are defined in the solrconfig.xml, many are implicit.
     -->
+  <!-- Default request handler in the solr admin UI -->
+  <requestHandler name="/select" class="solr.SearchHandler">
+     <lst name="defaults">
+       <str name="echoParams">explicit</str>
+       <str name="wt">json</str>
+       <str name="indent">true</str>
+       <str name="df">_text_</str>
+     </lst>
+  </requestHandler>
 
-  <!-- A request handler that returns indented JSON by default -->
+  <!-- The request handler used by the API -->
   <requestHandler name="/query" class="solr.SearchHandler">
      <lst name="defaults">
        <str name="echoParams">explicit</str>

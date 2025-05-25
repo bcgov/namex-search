@@ -22,8 +22,8 @@ def upgrade():
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('synonym', sa.String(length=50), nullable=False),
     sa.Column('synonym_list', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('synonym_type', sa.Enum('ADDRESS', 'NAME', name='type'), nullable=False),
-    sa.Column('last_update_date', sa.DateTime(), nullable=False),
+    sa.Column('synonym_type', sa.Enum('ADDRESS', 'NAME', 'ALL', name='syn_type'), nullable=False),
+    sa.Column('last_update_date', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('solr_synonym_lists', schema=None) as batch_op:
@@ -40,7 +40,7 @@ def upgrade():
     sa.Column('sub', sa.String(length=36), nullable=False),
     sa.Column('iss', sa.String(length=1024), nullable=False),
     sa.Column('unique_user_key', sa.String(length=256), nullable=False),
-    sa.Column('creation_date', sa.DateTime(), nullable=False),
+    sa.Column('creation_date', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('users', schema=None) as batch_op:
@@ -50,9 +50,9 @@ def upgrade():
 
     op.create_table('search_history',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('query', sa.String(), nullable=False),
+    sa.Column('query', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('results', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('search_date', sa.DateTime(), nullable=False),
+    sa.Column('search_date', sa.DateTime(timezone=True), nullable=False),
     sa.Column('submitter_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['submitter_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -61,7 +61,7 @@ def upgrade():
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('doc', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     sa.Column('entity_id', sa.String(length=50), nullable=False),
-    sa.Column('submission_date', sa.DateTime(), nullable=False),
+    sa.Column('submission_date', sa.DateTime(timezone=True), nullable=False),
     sa.Column('submitter_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['submitter_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -73,10 +73,10 @@ def upgrade():
 
     op.create_table('solr_doc_events',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('event_date', sa.DateTime(), nullable=False),
-    sa.Column('event_last_update', sa.DateTime(), nullable=False),
-    sa.Column('event_status', sa.Enum('COMPLETE', 'ERROR', 'PENDING', name='status'), nullable=False),
-    sa.Column('event_type', sa.Enum('RESYNC', 'UPDATE', name='type'), nullable=False),
+    sa.Column('event_date', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('event_last_update', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('event_status', sa.Enum('COMPLETE', 'ERROR', 'PENDING', name='event_status'), nullable=False),
+    sa.Column('event_type', sa.Enum('RESYNC', 'UPDATE', name='event_type'), nullable=False),
     sa.Column('solr_doc_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['solr_doc_id'], ['solr_docs.id'], ),
     sa.PrimaryKeyConstraint('id')

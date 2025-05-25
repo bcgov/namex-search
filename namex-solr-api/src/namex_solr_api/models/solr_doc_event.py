@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING
 
 from datetime import UTC, datetime
 
-from sqlalchemy import ForeignKey, event, func
+from sqlalchemy import DateTime, ForeignKey, event, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from namex_solr_api.common.base_enum import BaseEnum
@@ -70,11 +70,9 @@ class SolrDocEvent(Base):
     __tablename__ = "solr_doc_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    event_date: Mapped[datetime] = mapped_column(default=func.now())
-    event_last_update: Mapped[datetime] = mapped_column(default=func.now())
-    # TODO: need to test Status.PENDING vs Status.PENDING.value
-    event_status: Mapped[Status] = mapped_column(default=Status.PENDING, index=True)
-    # TODO: test nullable false
+    event_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    event_last_update: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    event_status: Mapped[Status] = mapped_column(default=Status.PENDING.value, index=True)
     event_type: Mapped[Type]
 
     solr_doc_id: Mapped[int] = mapped_column(ForeignKey('solr_docs.id'), index=True)

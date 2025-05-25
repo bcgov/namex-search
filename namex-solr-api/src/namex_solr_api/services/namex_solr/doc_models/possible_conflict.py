@@ -47,14 +47,22 @@ class PCField(BaseEnum):
     UNIQUE_KEY = "id"
     # stored fields
     CORP_NUM = "corp_num"
-    CORP_START_DATE = "corp_start_date"
     JURISDICTION = "jurisdiction"
     NAMES = "names"
     NR_NUM = "nr_num"
-    NR_START_DATE = "nr_start_date"
+    START_DATE = "start_date"
+    # TODO: review current NR states: A, APPROVED, C, CONDITION (are a/approved and c/condition dupes?)
+    # TODO: verify current CORP states: ACT, AMA, D1A, D1F, D1N, D2A, D2F, D2T, LIQ, LRS, NST
+    # - Can we group these in ACT, LIQ ? Follows business search logic
+    # - Will add nr states: 'CONSUMED', 'EXPIRED', 'REJECTED', 'DRAFT'
     STATE = "state"
-    # TODO: query fields
-    
+    TYPE = "type"  # NR or CORP
+    # query fields
+    CORP_NUM_Q = "corp_num_q"
+    CORP_NUM_Q_EDGE = "corp_num_q_edge"
+    NR_NUM_Q = "nr_num_q"
+    NR_NUM_Q_EDGE = "nr_num_q_edge"
+
     # common built in across docs
     SCORE = "score"
 
@@ -62,11 +70,31 @@ class PCField(BaseEnum):
 @dataclass
 class PossibleConflict:
     """Class representation for a solr possible conflict doc."""
-    id: str
-    jurisdiction: str
+    id: str  # The nr_num or corp_num depending on type
     names: list[Name]
-    state: str
+    state: str  # APPROVED, CONDITION, CONSUMED, DRAFT, EXPIRED, REJECTED, ACT, LIQ
+    type: str  # NR, CORP
     corp_num: str | None = None
-    corp_start_date: datetime | None = None
-    nr_num: str | None = None  # TODO: confirm if Exraprovincial or Federal have an NR?
-    nr_start_date: datetime | None = None
+    jurisdiction: str | None = None
+    nr_num: str | None = None
+    start_date: datetime | None = None
+
+    def __post_init__(self):
+        """Update child 'parent_' fields."""
+        for index, name in enumerate(self.names or []):
+            # set parent_state, parent_type, parent_id
+            if isinstance(name, dict):
+                name['id'] = f'{self.id}-name-{index}'
+                name['parent_id'] = self.id
+                name['parent_jurisdiction'] = self.jurisdiction
+                name['parent_start_date'] = self.start_date
+                name['parent_state'] = self.state
+                name['parent_type'] = self.type
+
+            elif isinstance(name, Name):
+                name.id = f'{self.id}-name-{index}'
+                name.parent_id = self.id
+                name.parent_jurisdiction = self.jurisdiction
+                name.parent_start_date = self.start_date
+                name.parent_state = self.state
+                name.parent_type = self.type

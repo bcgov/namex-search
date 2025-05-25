@@ -35,6 +35,8 @@
 from flask import Blueprint
 
 from .search import bp as search_bp
+from .synonyms import bp as synonyms_bp
 
 bp = Blueprint("API_V1", __name__, url_prefix="/api/v1")
 bp.register_blueprint(search_bp)
+bp.register_blueprint(synonyms_bp)
