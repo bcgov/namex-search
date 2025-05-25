@@ -37,13 +37,12 @@ from http import HTTPStatus
 import requests
 from flask import Flask, current_app, request
 from flask_caching import Cache
-from requests import Request, Session, exceptions
+from requests import Session, exceptions
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from namex_solr_api.exceptions import AuthorizationException, ExternalServiceException
+from namex_solr_api.exceptions import ExternalServiceException
 from namex_solr_api.services.jwt import jwt
-
 
 auth_cache = Cache()
 
@@ -97,7 +96,7 @@ class AuthService:
                 error=err.with_traceback(None),
                 message='Unable to get service account token.',
             ) from err
-        except Exception as err:  # noqa: B902
+        except Exception as err:
             self.app.logger.debug('SSO SVC connection failure: %s', err.with_traceback(None))
             raise ExternalServiceException(
                 status_code=HTTPStatus.GATEWAY_TIMEOUT,
@@ -114,7 +113,7 @@ class AuthService:
             token: str = jwt.get_token_auth_header()
             key: str = kwargs.get('path', args[0])
             return 'auth' + token + str(key)
-        except Exception as err:
+        except Exception:
             current_app.logger.error('Unable to build cache key from user header.')
 
     @auth_cache.cached(timeout=600, make_cache_key=get_cache_key)

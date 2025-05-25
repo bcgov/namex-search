@@ -38,7 +38,7 @@ here as a convenience for audit and db reporting.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime  # noqa: TC003 ; sqlalchemy complains if its in a type block
 from enum import auto
 from typing import TYPE_CHECKING
 
@@ -79,8 +79,8 @@ class User(Base):
     unique_user_key: Mapped[str] = mapped_column(String(256), unique=True, index=True)
     creation_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
     # Relationships
-    searches: Mapped[list['SearchHistory']] = relationship(back_populates="submitter")
-    updated_docs: Mapped[list['SolrDoc']] = relationship(back_populates="submitter")
+    searches: Mapped[list[SearchHistory]] = relationship(back_populates="submitter")
+    updated_docs: Mapped[list[SolrDoc]] = relationship(back_populates="submitter")
 
     @property
     def display_name(self):

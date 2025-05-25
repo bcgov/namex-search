@@ -34,7 +34,7 @@
 """Manages user search history that can be used to verify/compare results and ordering."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime  # noqa: TC003 ; sqlalchemy complains if its in a type block
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, DateTime, ForeignKey, func
@@ -59,4 +59,4 @@ class SearchHistory(Base):
 
     # Relationships
     submitter_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
-    submitter: Mapped['User'] = relationship(back_populates='searches')
+    submitter: Mapped[User] = relationship(back_populates='searches')

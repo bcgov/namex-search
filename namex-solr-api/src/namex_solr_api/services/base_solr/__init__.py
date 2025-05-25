@@ -41,8 +41,8 @@ from requests import Response, Session
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import ConnectionError as SolrConnectionError
 
-from namex_solr_api.exceptions import SolrException
 from namex_solr_api.common.base_enum import BaseEnum
+from namex_solr_api.exceptions import SolrException
 
 
 class Solr:

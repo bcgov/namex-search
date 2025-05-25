@@ -43,7 +43,6 @@ from namex_solr_api.models import SolrDoc, SolrDocEvent
 from namex_solr_api.services import solr
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField, PossibleConflict
 
-
 bp = Blueprint("SYNC", __name__, url_prefix="/sync")
 
 

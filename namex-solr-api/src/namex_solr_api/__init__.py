@@ -47,7 +47,7 @@ from namex_solr_api import models
 from namex_solr_api.config import DevelopmentConfig, MigrationConfig, ProductionConfig, UnitTestingConfig
 from namex_solr_api.models import db
 from namex_solr_api.resources import internal_bp, ops_bp, v1_bp
-from namex_solr_api.services import solr, jwt
+from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.auth import auth_cache
 from namex_solr_api.version import get_run_version
 from structured_logging import StructuredLogging

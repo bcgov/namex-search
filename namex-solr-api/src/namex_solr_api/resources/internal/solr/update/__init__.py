@@ -63,9 +63,9 @@ def update_possible_conflict():
     try:
         request_json: dict = request.json
         # TODO: validate request
-        # errors = RequestValidator.validate_solr_update_request(request_json)
+        # errors = RequestValidator.validate_solr_update_request(request_json)  # noqa: ERA001
         # if errors:
-        #     return resource_utils.bad_request_response("Invalid payload.", errors)
+        #     return resource_utils.bad_request_response("Invalid payload.", errors)  # noqa: ERA001
 
         user = User.get_or_create_user_by_jwt(g.jwt_oidc_token_info)
 

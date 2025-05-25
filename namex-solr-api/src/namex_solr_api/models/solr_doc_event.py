@@ -34,10 +34,9 @@
 """Manages solr doc updates made to the Search Core (tracks updates made via the api)."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from enum import auto
 from typing import TYPE_CHECKING
-
-from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, ForeignKey, event, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -76,7 +75,7 @@ class SolrDocEvent(Base):
     event_type: Mapped[Type]
 
     solr_doc_id: Mapped[int] = mapped_column(ForeignKey('solr_docs.id'), index=True)
-    solr_doc: Mapped['SolrDoc'] = relationship(back_populates='events')
+    solr_doc: Mapped[SolrDoc] = relationship(back_populates='events')
 
     @classmethod
     def get_events_by_status(

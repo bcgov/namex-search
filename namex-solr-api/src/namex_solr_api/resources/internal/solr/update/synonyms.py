@@ -62,10 +62,10 @@ def update_synonyms():
         synonyms_terms: dict[SolrSynonymList.Type, list[str]] = {}
         synonyms_updated: dict[SolrSynonymList.Type, dict[str, list[str]]] = {}
         for synonym_type, synonym_lists in synonyms.items():
-            synonym_type = SolrSynonymList.Type(synonym_type)
-            synonyms_terms[synonym_type] = SolrSynonymList.create_or_replace_all(synonyms=synonym_lists, synonym_type=synonym_type)
-            terms_synonym_lists = SolrSynonymList.find_all_by_synonyms(synonyms_terms[synonym_type], synonym_type)
-            synonyms_updated = {synonym_type: { x.synonym: x.synonym_list for x in terms_synonym_lists}}
+            syn_type = SolrSynonymList.Type(synonym_type)
+            synonyms_terms[syn_type] = SolrSynonymList.create_or_replace_all(synonyms=synonym_lists, synonym_type=syn_type)
+            terms_synonym_lists = SolrSynonymList.find_all_by_synonyms(synonyms_terms[syn_type], syn_type)
+            synonyms_updated = {syn_type: { x.synonym: x.synonym_list for x in terms_synonym_lists}}
 
         # update solr synonym file
         if SolrSynonymList.Type.ALL in synonyms_updated:

@@ -41,7 +41,7 @@ from flask_cors import cross_origin
 from namex_solr_api.exceptions import bad_request_response, exception_response
 from namex_solr_api.models import SolrDoc, SolrDocEvent, User
 from namex_solr_api.services import jwt, solr
-from namex_solr_api.services.namex_solr.doc_models import NameField, PCField, PossibleConflict
+from namex_solr_api.services.namex_solr.doc_models import PossibleConflict
 
 bp = Blueprint("RESYNC", __name__, url_prefix="/resync")
 
@@ -54,8 +54,8 @@ def resync_solr():
     try:
         request_json: dict = request.json
         from_datetime = datetime.now(UTC)
-        minutes_offset = request_json.get("minutesOffset", None)
-        identifiers_to_resync = request_json.get("identifiers", None)
+        minutes_offset = request_json.get("minutesOffset")
+        identifiers_to_resync = request_json.get("identifiers")
         if not minutes_offset and not identifiers_to_resync:
             return bad_request_response('Missing required field "minutesOffset" or "identifiers".')
         try:

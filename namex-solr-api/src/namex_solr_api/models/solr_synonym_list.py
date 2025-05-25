@@ -42,6 +42,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from namex_solr_api.common.base_enum import BaseEnum
+
 from .base import Base
 from .db import db
 
@@ -110,7 +111,7 @@ class SolrSynonymList(Base):
             # Also needs a mapping from each item in the synonym list to the synonym
             for list_synonym in synonym_list:
                 # NOTE: this will add to the existing list
-                SolrSynonymList.create_or_replace(synonym_type, list_synonym, [synonym] + synonym_list, False)
-            synonyms_updated += [synonym] + synonym_list
+                SolrSynonymList.create_or_replace(synonym_type, list_synonym, [synonym, *synonym_list], False)
+            synonyms_updated += [synonym, *synonym_list]
         db.session.commit()
         return synonyms_updated

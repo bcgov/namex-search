@@ -146,7 +146,7 @@ class QueryBuilder:
                 term_clause = self.join_clause(term_clause, f"{pre_boost_clause}{fuzzy_str}", "OR")
         return term_clause
 
-    def build_term_synonym_clauses(
+    def build_term_synonym_clauses(  # noqa: PLR0913
         self,
         term_clause: str,
         terms: list[str],
@@ -166,7 +166,7 @@ class QueryBuilder:
             field_value = field.value
             if level == "child" and not is_child_search:
                 field_value = self.pre_child_filter_clause + field.value
-            elif not level == "child" and is_child_search:
+            elif level != "child" and is_child_search:
                 field_value = self.pre_parent_filter_clause + field.value
 
             synonym_clause = ""
@@ -183,7 +183,7 @@ class QueryBuilder:
 
         return term_clause
 
-    def build_base_query(self,
+    def build_base_query(self,  # noqa: PLR0913
                          query: dict[str, str],
                          fields: dict[BaseEnum, str],
                          boost_fields: dict[BaseEnum, int],

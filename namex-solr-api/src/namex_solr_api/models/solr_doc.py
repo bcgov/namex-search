@@ -34,7 +34,7 @@
 """Manages solr doc updates made to the Search Core (tracks updates made via the api)."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime  # noqa: TC003 ; sqlalchemy complains if its in a type block
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, func
@@ -60,9 +60,9 @@ class SolrDoc(Base):
     submission_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), index=True)
 
     submitter_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
-    submitter: Mapped['User'] = relationship(back_populates='updated_docs')
+    submitter: Mapped[User] = relationship(back_populates='updated_docs')
 
-    events: Mapped[list['SolrDocEvent']] = relationship(back_populates='solr_doc')
+    events: Mapped[list[SolrDocEvent]] = relationship(back_populates='solr_doc')
 
     @classmethod
     def find_most_recent_by_entity_id(cls, entity_id: str) -> SolrDoc:

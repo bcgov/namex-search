@@ -35,14 +35,14 @@
 """Exposes all of the search endpoints in Flask-Blueprint style."""
 from http import HTTPStatus
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, jsonify, request
 from flask.globals import request_ctx
 from flask_cors import cross_origin
 
-from namex_solr_api.exceptions import bad_request_response, exception_response
+from namex_solr_api.exceptions import exception_response
 from namex_solr_api.models import SearchHistory, User
 from namex_solr_api.services import jwt, solr
-from namex_solr_api.services.base_solr.utils import QueryParams, parse_facets, prep_query_str
+from namex_solr_api.services.base_solr.utils import QueryParams, prep_query_str
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import namex_search
 
@@ -60,7 +60,7 @@ def possible_conflict_names():
         request_json = request.json
         # TODO: validate request
         # if errors:
-        #     return bad_request_response("Errors processing request.", errors)
+        #     return bad_request_response("Errors processing request.", errors)  # noqa: ERA001
 
         # set base query params
         query_json: dict = request_json.get("query", {})
@@ -166,7 +166,7 @@ def nrs():
         request_json = request.json
         # TODO: validate request
         # if errors:
-        #     return bad_request_response("Errors processing request.", errors)
+        #     return bad_request_response("Errors processing request.", errors)  # noqa: ERA001
 
         # set base query params
         query_json: dict = request_json.get("query", {})

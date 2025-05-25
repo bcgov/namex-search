@@ -33,6 +33,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """Manages dataclass for the solr name doc."""
 from dataclasses import dataclass
+
 from namex_solr_api.common.base_enum import BaseEnum
 
 
