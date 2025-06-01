@@ -90,8 +90,9 @@ def _parse_names(data: dict) -> list[Name]:
     names: list[Name] = []
     for name_data in data['names']:
         names.append(Name(name=name_data['name'],
-                          name_state=name_data['name_state_type_cd'],
-                          submit_count=name_data['submit_count']))
+                          name_state=name_data['name_state'],
+                          submit_count=name_data['submit_count'],
+                          choice=name_data['choice']))
     return names
 
 
@@ -100,7 +101,7 @@ def _parse_conflict(data: dict) -> PossibleConflict:
     return PossibleConflict(
         id=data['nr_num'] if data['type'] == 'NR' else data['corp_num'],
         names=_parse_names(data),
-        state=data['state_type_cd'],
+        state=data['state'],
         type=data['type'],
         corp_num=data.get('corp_num'),
         jurisdiction=data.get('jurisdiction'),

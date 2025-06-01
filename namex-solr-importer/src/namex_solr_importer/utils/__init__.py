@@ -31,51 +31,8 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Manages dataclass for the solr name doc."""
-from dataclasses import dataclass
-
-from namex_solr_api.common.base_enum import BaseEnum
-
-
-class NameField(BaseEnum):
-    """Enum of the name fields available."""
-
-    # unique key for all docs
-    UNIQUE_KEY = "id"
-    # stored fields
-    CHOICE = "choice"
-    NAME = "name"
-    NAME_STATE = "name_state"
-    SUBMIT_COUNT = "submit_count"
-    PARENT_ID = "parent_id"
-    PARENT_JURISDICTION = "parent_jurisdiction"
-    PARENT_START_DATE = "parent_start_date"
-    PARENT_STATE = "parent_state"
-    PARENT_TYPE = "parent_type"
-    # query fields
-    NAME_Q = "name_q"  # minimal stem
-    NAME_Q_SINGLE = "name_q_single_term"  # ngram
-    NAME_Q_AGRO = "name_q_stem_agro"  # aggressive stem
-    NAME_Q_SYN = "name_q_synonym"  # synonym
-    NAME_Q_XTRA = "name_q_xtra"  # classic tokenizer on query (others using whitespace - effects periods, dashes etc.)
-
-    # common built in across docs
-    SCORE = "score"
-
-
-@dataclass
-class Name:
-    """Class representation for a solr name doc."""
-    name: str
-    # TODO: review existing states (A, C, R, APPROVED, CONDITION) -- are A/APPROVED the same? Are C/CONDITION the same?
-    # adding new states for corp name: 'CORP', and nr name: 'NE'
-    name_state: str
-    choice: int | None = None
-    id: str | None = None  # set by parent
-    submit_count: int | None = None
-    parent_id: str | None = None  # corp num or nr num
-    parent_jurisdiction: str | None = None
-    parent_start_date: str | None = None
-    parent_state: str | None = None
-    parent_type: str | None = None
-    
+"""Manages util functions for the importer."""
+from .data_collection import collect_colin_data, collect_lear_data, collect_namex_data, collect_synonyms_data
+from .data_parsing import parse_conflict, parse_synonyms
+from .reindex import reindex_post, reindex_prep, reindex_recovery
+from .solr_api import import_conflicts, resync, update_synonyms

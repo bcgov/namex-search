@@ -67,8 +67,6 @@ class Config:
 
     AUTH_SVC_URL = os.getenv("AUTH_API_URL", "") + os.getenv("AUTH_API_VERSION", "")
 
-    LD_SDK_KEY = os.getenv("LD_SDK_KEY", None)
-
     # Used by /sync endpoint
     MAX_BATCH_UPDATE_NUM = int(os.getenv("MAX_BATCH_UPDATE_NUM", "500"))
     # Used by /sync heartbeat

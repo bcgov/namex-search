@@ -725,6 +725,7 @@
   <field name="type" type="string" docValues="true" indexed="true" stored="true"/>
   <field name="names" type="string" indexed="true" stored="true" multiValued="true"/>
   <!-- Name docs (under 'names') -->
+  <field name="choice" type="pint" indexed="false" stored="true"/>
   <field name="name" type="string" indexed="false" stored="true"/>
   <field name="name_q" type="text_stemmed" indexed="true" stored="false"/>
   <field name="name_q_single_term" type="multi_word_ngram" indexed="true" stored="false"/>
@@ -732,7 +733,7 @@
   <field name="name_q_synonym" type="synonym" indexed="true" stored="false"/>
   <field name="name_q_xtra" type="text_extra" indexed="true" stored="false"/>
   <field name="name_state" type="string" docValues="true" indexed="true" stored="true"/>
-  <field name="submit_count" type="pint" stored="true"/>
+  <field name="submit_count" type="pint" indexed="false" stored="true"/>
   <field name="parent_id" type="string" indexed="false" stored="true"/>
   <field name="parent_jurisdiction" type="string" indexed="false" stored="true"/>
   <field name="parent_start_date" type="string" indexed="false" stored="true"/>
