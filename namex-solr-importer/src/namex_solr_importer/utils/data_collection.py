@@ -111,7 +111,7 @@ def collect_namex_data():
                             password=current_app.config.get("DB_PASSWORD"))
     cur = conn.cursor()
     current_app.logger.debug("Collecting NameX data...")
-    cur.execute(f"""
+    cur.execute("""
         SELECT r.nr_num, r.corp_num, r.state_cd as state, r.xpro_jurisdiction as jurisdiction,
             r.submitted_date as start_date, r.submit_count,
             n.name, n.state as name_state, n.choice,
@@ -136,7 +136,7 @@ def collect_synonyms_data():
     cur = conn.cursor()
     current_app.logger.debug("Collecting Synonym data...")
     # TODO: verify can just collect 'synonym' table / 'synonyms_text' column (there's also synonym_orig / stems_text)
-    cur.execute(f"""
+    cur.execute("""
         SELECT synonyms_text
         FROM synonym
         WHERE enabled='t'

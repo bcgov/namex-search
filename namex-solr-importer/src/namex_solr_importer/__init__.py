@@ -39,7 +39,7 @@ import os
 
 from flask import Flask
 
-from namex_solr_api.services import solr, auth
+from namex_solr_api.services import auth, solr
 from namex_solr_importer.config import DevelopmentConfig, ProductionConfig, UnitTestingConfig
 from namex_solr_importer.oracle import oracle_db
 from namex_solr_importer.version import __version__

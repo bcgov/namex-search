@@ -32,39 +32,37 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Data parsing functions."""
-from datetime import UTC, datetime
-
-from flask import current_app
+from datetime import datetime
 
 from namex_solr_api.services.namex_solr.doc_models import Name, PossibleConflict
 
 
 def _parse_names(data: dict, type: str) -> list[Name]:
     """Parse the name data as a list of Name."""
-    if type == 'CORP':
-        return [Name(name=data['name'], name_state="CORP")]
+    if type == "CORP":
+        return [Name(name=data["name"], name_state="CORP")]
 
     names: list[Name] = []
-    for name_data in data['names']:
-        names.append(Name(name=name_data['name'],
-                          name_state=name_data['name_state'],
-                          submit_count=name_data['submit_count'],
-                          choice=name_data.get('choice')))
+    for name_data in data["names"]:
+        names.append(Name(name=name_data["name"],
+                          name_state=name_data["name_state"],
+                          submit_count=name_data["submit_count"],
+                          choice=name_data.get("choice")))
     return names
 
 
 def parse_conflict(data: dict, type: str) -> PossibleConflict:
     """Parse the data as a PossibleConflict."""
-    if start_date := data.get('start_date'):
+    if start_date := data.get("start_date"):
         converted_start_date = datetime.isoformat(start_date, timespec="seconds").replace("+00:00", "")
     return PossibleConflict(
-        id=data['nr_num'] if type == 'NR' else data['corp_num'],
+        id=data["nr_num"] if type == "NR" else data["corp_num"],
         names=_parse_names(data, type),
-        state=data['state'],
+        state=data["state"],
         type=type,
-        corp_num=data.get('corp_num'),
-        jurisdiction=data.get('jurisdiction') or 'BC',
-        nr_num=data.get('nr_num'),
+        corp_num=data.get("corp_num"),
+        jurisdiction=data.get("jurisdiction") or "BC",
+        nr_num=data.get("nr_num"),
         start_date=converted_start_date,
     )
 
@@ -72,5 +70,5 @@ def parse_conflict(data: dict, type: str) -> PossibleConflict:
 def parse_synonyms(data: list) -> dict[str,list[str]]:
     """Parse the synonym data in preparation for namex solr api update call."""
     return {
-        x[0].split(',')[0]: x[0].split(',') for x in data
+        x[0].split(",")[0]: x[0].split(",") for x in data
     }

@@ -83,12 +83,12 @@ def _load_conflicts(data_cur: cursor, data_name: str, type: str):
         elif type == "NR":
             # each nr name will have its own record, so we have to put them together
             name_dict = {
-                'name': item_dict["name"],
-                'name_state': item_dict["name_state"],
-                'submit_count': item_dict["submit_count"],
-                'choice': item_dict["choice"],
+                "name": item_dict["name"],
+                "name_state": item_dict["name_state"],
+                "submit_count": item_dict["submit_count"],
+                "choice": item_dict["choice"],
             }
-            print(item_dict["nr_num"])
+
             if (nr_num := item_dict["nr_num"]) in nr_data:
                 # add name to nr
                 nr_data[nr_num]["names"].append(name_dict)
@@ -97,7 +97,7 @@ def _load_conflicts(data_cur: cursor, data_name: str, type: str):
                 item_dict["names"] = [name_dict]
                 # add nr to dict
                 nr_data[nr_num] = item_dict
-    print(nr_data)
+
     for nr_conflict in nr_data.values():
         # parse all the nrs (the names will be grouped underneath them now)
         possible_conflicts.append(asdict(parse_conflict(nr_conflict, type)))
@@ -134,7 +134,7 @@ def _load_lear_corps():
     return count, final_record
 
 
-def load_conflicts_core():
+def load_conflicts_core():  # noqa: PLR0915
     """Load data from Synonyms, NameX, LEAR and COLIN into the conflicts core."""
     try:
         is_reindex = current_app.config.get("REINDEX_CORE")
