@@ -74,6 +74,11 @@ class SolrSynonymList(Base):
         return cls.query.filter_by(synonym_type=synonym_type.value).filter(cls.synonym.in_(synonyms)).all()
     
     @classmethod
+    def find_all_excluding(cls, synonyms: list[str], synonym_type: Type) -> list[SolrSynonymList]:
+        """Return all the solr synonym objects not in the given list for the type."""
+        return cls.query.filter_by(synonym_type=synonym_type.value).filter(cls.synonym.notin_(synonyms)).all()
+    
+    @classmethod
     def find_all_by_synonym_type(cls, synonym_type: Type) -> list[SolrSynonymList]:
         """Return all the solr synonym objects for the type."""
         return cls.query.filter_by(synonym_type=synonym_type.value).all()
@@ -105,6 +110,7 @@ class SolrSynonymList(Base):
     def create_or_replace_all(synonyms: dict[str, list[str]], synonym_type: Type) -> list[str]:
         """Add or replace the given synonyms inside the db."""
         synonyms_updated = []
+        # TODO: confirm if words can span multiple synonym lists or not
         for synonym, synonym_list in synonyms.items():
             # NOTE: this will replace the exiting list
             SolrSynonymList.create_or_replace(synonym_type, synonym, synonym_list, True)
@@ -115,3 +121,12 @@ class SolrSynonymList(Base):
             synonyms_updated += [synonym, *synonym_list]
         db.session.commit()
         return synonyms_updated
+
+    @staticmethod
+    def delete_all(synonym_type: Type, preserved_synonyms: list[str] = None):
+        """Delete all synonyms the synonym type."""
+        syns_to_delete = SolrSynonymList.find_all_excluding(preserved_synonyms or [], synonym_type)
+        for syn in syns_to_delete:
+            print(f"deleting {syn}")
+            db.session.delete(syn)
+        db.session.commit()

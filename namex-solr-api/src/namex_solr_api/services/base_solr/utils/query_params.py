@@ -52,3 +52,4 @@ class QueryParams:  # pylint: disable=too-few-public-methods
     query_boost_fields: dict[BaseEnum, int]
     query_fuzzy_fields: dict[BaseEnum, dict[str, int]]
     query_synonym_fields: dict[BaseEnum, str]
+    full_query_boosts: list[dict[str, BaseEnum | str]]

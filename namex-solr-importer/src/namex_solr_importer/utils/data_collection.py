@@ -85,8 +85,8 @@ def collect_lear_data():
     cur = conn.cursor()
     current_app.logger.debug("Collecting LEAR data...")
     cur.execute(f"""
-        SELECT b.identifier as corp_num,b.legal_name as name,b.founding_date as start_date,
-            CASE when b.state = 'LIQUIDATION' then 'ACTIVE' else b.state END state,
+        SELECT b.identifier as corp_num, b.legal_name as name,
+            b.founding_date as start_date, b.state,
             CASE j.region
                 when NULL then j.country
                 when 'FEDERAL' then 'FD'
@@ -96,7 +96,7 @@ def collect_lear_data():
         LEFT JOIN jurisdictions j on j.business_id = b.id
         WHERE legal_type in ({_get_stringified_list_for_sql('CONFLICT_LEGAL_TYPES')})
             and legal_type in ({_get_stringified_list_for_sql('MODERNIZED_LEGAL_TYPES')})
-            and state in ('ACTIVE','LIQUIDATION')
+            and state in ('ACTIVE')
         """)
     return cur
 
@@ -114,11 +114,13 @@ def collect_namex_data():
     cur.execute("""
         SELECT r.nr_num, r.corp_num, r.state_cd as state, r.xpro_jurisdiction as jurisdiction,
             r.submitted_date as start_date, r.submit_count,
-            n.name, n.state as name_state, n.choice,
+            n.name, n.choice,
             CASE n.state
                 when 'APPROVED' then 'A'
                 when 'REJECTED' then 'R'
                 when 'CONDITION' then 'C'
+                else n.state
+            END as name_state
         FROM requests r
             JOIN names n on n.nr_id = r.id
         """)

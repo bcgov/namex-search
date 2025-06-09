@@ -150,7 +150,7 @@ def update_synonyms(payload: dict):
     current_app.logger.debug("Token set.")
     current_app.logger.debug("Updating Synonyms...")
     try:
-        resp = requests.put(url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/synonyms",
+        resp = requests.put(url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/update/synonyms?prune=true",
                             headers=headers,
                             json={"ALL": payload},
                             timeout=90)

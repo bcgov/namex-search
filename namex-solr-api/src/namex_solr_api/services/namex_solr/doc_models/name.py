@@ -54,6 +54,7 @@ class NameField(BaseEnum):
     PARENT_TYPE = "parent_type"
     # query fields
     NAME_Q = "name_q"  # minimal stem
+    NAME_Q_EXACT = "name_q_exact"  # edge ngram
     NAME_Q_SINGLE = "name_q_single_term"  # ngram
     NAME_Q_AGRO = "name_q_stem_agro"  # aggressive stem
     NAME_Q_SYN = "name_q_synonym"  # synonym
