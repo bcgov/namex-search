@@ -123,10 +123,9 @@ class SolrSynonymList(Base):
         return synonyms_updated
 
     @staticmethod
-    def delete_all(synonym_type: Type, preserved_synonyms: list[str] = None):
+    def delete_all(synonym_type: Type, preserved_synonyms: list[str] | None = None):
         """Delete all synonyms the synonym type."""
         syns_to_delete = SolrSynonymList.find_all_excluding(preserved_synonyms or [], synonym_type)
         for syn in syns_to_delete:
-            print(f"deleting {syn}")
             db.session.delete(syn)
         db.session.commit()

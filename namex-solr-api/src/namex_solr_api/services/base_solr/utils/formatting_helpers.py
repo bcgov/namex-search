@@ -34,8 +34,6 @@
 """Solr formatting functions."""
 import re
 
-from flask import current_app
-
 
 def parse_facets(facet_data: dict) -> dict:
     """Return formatted solr facet response data."""

@@ -62,7 +62,7 @@ def update_synonyms():
         synonyms_terms: dict[SolrSynonymList.Type, list[str]] = {}
         synonyms_updated: dict[SolrSynonymList.Type, dict[str, list[str]]] = {}
         for synonym_type, synonym_lists in synonyms.items():
-            # i.e. syn_type = ALL
+            # i.e. syn_type = ALL  # noqa: ERA001
             syn_type = SolrSynonymList.Type(synonym_type)
 
             # i.e. { ALL: ['bc', 'british columbia', 'ab', 'alberta'] }
