@@ -41,7 +41,7 @@ from flask import Flask
 
 from namex_solr_api.services import auth, solr
 from namex_solr_importer.config import DevelopmentConfig, ProductionConfig, UnitTestingConfig
-from namex_solr_importer.oracle import oracle_db
+from namex_solr_importer.services import lear_db, namex_db, oracle_db, synonyms_db
 from namex_solr_importer.version import __version__
 from structured_logging import StructuredLogging
 
@@ -79,9 +79,17 @@ def create_app(config_name: str = os.getenv("DEPLOYMENT_ENV", "production") or "
     app = Flask(__name__)
     app.config.from_object(config.get(config_name, ProductionConfig))
     app.logger = StructuredLogging(app).get_logger()
-    oracle_db.init_app(app)
     solr.init_app(app)
     auth.init_app(app)
+    # Init relevant dbs
+    if app.config["INCLUDE_COLIN_LOAD"]:
+        oracle_db.init_app(app)
+    if app.config["INCLUDE_LEAR_LOAD"]:
+        lear_db.init_app(app)
+    if app.config["INCLUDE_NAMEX_LOAD"]:
+        namex_db.init_app(app)
+    if app.config["INCLUDE_SYNONYM_LOAD"]:
+        synonyms_db.init_app(app)
 
     register_shellcontext(app)
 

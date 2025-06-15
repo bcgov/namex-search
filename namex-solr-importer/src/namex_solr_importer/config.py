@@ -69,7 +69,6 @@ class Config:
     SOLR_RETRY_BACKOFF_FACTOR = int(os.getenv("SOLR_RETRY_BACKOFF_FACTOR", "5"))
 
     SOLR_API_URL = os.getenv("SOLR_API_URL", "http://")
-    SOLR_API_V1 = os.getenv("SOLR_API_V1", "")
 
     BATCH_SIZE = int(os.getenv("SOLR_BATCH_UPDATE_SIZE", "1000"))
     REINDEX_CORE = os.getenv("REINDEX_CORE", "False") == "True"
@@ -111,6 +110,8 @@ class Config:
     DB_NAME = os.getenv("DATABASE_NAME", "")
     DB_HOST = os.getenv("DATABASE_HOST", "")
     DB_PORT = os.getenv("DATABASE_PORT", "5432")
+    DB_CONNECTION_NAME = os.getenv("DATABASE_CONNECTION_NAME")
+    GOOGLE_APPLICATION_CREDENTIALS_NAMEX = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_NAMEX", "sa-secret/namex/secret.json")
     
     # Lear db
     LEAR_DB_USER = os.getenv("LEAR_DATABASE_USERNAME", "")
@@ -118,6 +119,8 @@ class Config:
     LEAR_DB_NAME = os.getenv("LEAR_DATABASE_NAME", "")
     LEAR_DB_HOST = os.getenv("LEAR_DATABASE_HOST", "")
     LEAR_DB_PORT = os.getenv("LEAR_DATABASE_PORT", "5432")
+    LEAR_DB_CONNECTION_NAME = os.getenv("LEAR_DATABASE_CONNECTION_NAME")
+    GOOGLE_APPLICATION_CREDENTIALS_LEAR = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_LEAR", "sa-secret/lear/secret.json")
 
     # Synonyms db
     SYN_DB_USER = os.getenv("SYN_DATABASE_USERNAME", "")
@@ -125,6 +128,8 @@ class Config:
     SYN_DB_NAME = os.getenv("SYN_DATABASE_NAME", "")
     SYN_DB_HOST = os.getenv("SYN_DATABASE_HOST", "")
     SYN_DB_PORT = os.getenv("SYN_DATABASE_PORT", "5432")
+    SYN_DB_CONNECTION_NAME = os.getenv("SYN_DATABASE_CONNECTION_NAME")
+    GOOGLE_APPLICATION_CREDENTIALS_SYN = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_SYN", "sa-secret/synonyms/secret.json")
 
     # Connection pool settings
     DB_MIN_POOL_SIZE = os.getenv("DATABASE_MIN_POOL_SIZE", "2")
@@ -163,6 +168,11 @@ class UnitTestingConfig(Config):
     DEBUG = True
     DEVELOPMENT = False
     TESTING = True
+    # TODO: update these when tests are ready
+    INCLUDE_NAMEX_LOAD = False
+    INCLUDE_SYNONYM_LOAD = False
+    INCLUDE_COLIN_LOAD = False
+    INCLUDE_LEAR_LOAD = False
     # SOLR
     SOLR_SVC_LEADER_CORE = os.getenv("TEST_SOLR_SVC_LEADER_CORE", "name_request")
     SOLR_SVC_FOLLOWER_CORE = os.getenv("TEST_SOLR_SVC_FOLLOWER_CORE", "name_request_follower")
@@ -171,7 +181,6 @@ class UnitTestingConfig(Config):
     HAS_FOLLOWER = SOLR_SVC_FOLLOWER_URL != SOLR_SVC_LEADER_URL
 
     SOLR_API_URL = "http://test.SOLR_API_URL.fake"
-    SOLR_API_V1 = os.getenv("SOLR_API_V1", "")
 
     # Service account details
     ACCOUNT_SVC_AUTH_URL = "http://test.account-svc-url.fake"
@@ -183,11 +192,32 @@ class UnitTestingConfig(Config):
     ORACLE_HOST = os.getenv("ORACLE_TEST_HOST", "")
     ORACLE_PORT = int(os.getenv("ORACLE_TEST_PORT", "1521"))
 
+    # NameX
     DB_USER = os.getenv("DATABASE_TEST_USERNAME", "")
     DB_PASSWORD = os.getenv("DATABASE_TEST_PASSWORD", "")
     DB_NAME = os.getenv("DATABASE_TEST_NAME", "")
     DB_HOST = os.getenv("DATABASE_TEST_HOST", "")
     DB_PORT = os.getenv("DATABASE_TEST_PORT", "5432")
+    DB_CONNECTION_NAME = os.getenv("DATABASE_TEST_CONNECTION_NAME")
+    GOOGLE_APPLICATION_CREDENTIALS_NAMEX = "fake"
+
+     # Lear db
+    LEAR_DB_USER = os.getenv("LEAR_TEST_DATABASE_USERNAME", "")
+    LEAR_DB_PASSWORD = os.getenv("LEAR_TEST_DATABASE_PASSWORD", "")
+    LEAR_DB_NAME = os.getenv("LEAR_TEST_DATABASE_NAME", "")
+    LEAR_DB_HOST = os.getenv("LEAR_TEST_DATABASE_HOST", "")
+    LEAR_DB_PORT = os.getenv("LEAR_TEST_DATABASE_PORT", "5432")
+    LEAR_DB_CONNECTION_NAME = os.getenv("LEAR_TEST_DATABASE_CONNECTION_NAME")
+    GOOGLE_APPLICATION_CREDENTIALS_LEAR = "fake"
+
+    # Synonyms db
+    SYN_DB_USER = os.getenv("SYN_TEST_DATABASE_USERNAME", "")
+    SYN_DB_PASSWORD = os.getenv("SYN_TEST_DATABASE_PASSWORD", "")
+    SYN_DB_NAME = os.getenv("SYN_TEST_DATABASE_NAME", "")
+    SYN_DB_HOST = os.getenv("SYN_TEST_DATABASE_HOST", "")
+    SYN_DB_PORT = os.getenv("SYN_TEST_DATABASE_PORT", "5432")
+    SYN_DB_CONNECTION_NAME = os.getenv("SYN_TEST_DATABASE_CONNECTION_NAME")
+    GOOGLE_APPLICATION_CREDENTIALS_SYN = "fake"
 
 
 class ProductionConfig(Config):

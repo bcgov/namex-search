@@ -36,7 +36,7 @@ import sys
 from dataclasses import asdict
 
 from flask import current_app
-from psycopg2._psycopg import cursor
+from sqlalchemy import CursorResult
 
 from namex_solr_api.exceptions import SolrException
 from namex_solr_importer import create_app
@@ -66,12 +66,17 @@ def _load_synonyms():
     current_app.logger.debug("---------- Synonym update completed ----------.")
 
 
-def _load_conflicts(data_cur: cursor, data_name: str, type: str):
+def _load_conflicts(data_cur: CursorResult, data_name: str, type: str):
     """Update namex search with the given conflicts."""
     current_app.logger.debug("Fetching data...")
-    # NOTE: for the colin connection the data_cur is not a 'cursor' type, but they overlap for the used methods
     data = data_cur.fetchall()
-    namex_descs = [desc[0].lower() for desc in data_cur.description]
+    # NOTE: for the colin connection the data_cur is not a 'CursorResult' type
+    if isinstance(data_cur, CursorResult):
+        # CursorResult
+        namex_descs = data_cur.keys()
+    else:
+        # Oracle cusrsor
+        namex_descs = [desc[0].lower() for desc in data_cur.description]
     nr_data: dict[str, dict] = {}
     possible_conflicts = []
     current_app.logger.debug("Parsing data...")

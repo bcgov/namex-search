@@ -32,10 +32,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Data collection functions."""
-import psycopg2
 from flask import current_app
+from sqlalchemy import CursorResult, text
 
-from namex_solr_importer import oracle_db
+from namex_solr_importer import lear_db, namex_db, oracle_db, synonyms_db
 
 
 def _get_stringified_list_for_sql(config_value: str) -> str:
@@ -74,17 +74,12 @@ def collect_colin_data():
     return cursor
 
 
-def collect_lear_data():
+def collect_lear_data() -> CursorResult:
     """Collect data from LEAR."""
     current_app.logger.debug("Connecting to LEAR Postgres instance...")
-    conn = psycopg2.connect(host=current_app.config.get("LEAR_DB_HOST"),
-                            port=current_app.config.get("LEAR_DB_PORT"),
-                            database=current_app.config.get("LEAR_DB_NAME"),
-                            user=current_app.config.get("LEAR_DB_USER"),
-                            password=current_app.config.get("LEAR_DB_PASSWORD"))
-    cur = conn.cursor()
+    conn = lear_db.db.engine.connect()
     current_app.logger.debug("Collecting LEAR data...")
-    cur.execute(f"""
+    return conn.execute(text(f"""
         SELECT b.identifier as corp_num, b.legal_name as name,
             b.founding_date as start_date, b.state,
             CASE j.region
@@ -97,21 +92,16 @@ def collect_lear_data():
         WHERE legal_type in ({_get_stringified_list_for_sql('CONFLICT_LEGAL_TYPES')})
             and legal_type in ({_get_stringified_list_for_sql('MODERNIZED_LEGAL_TYPES')})
             and state in ('ACTIVE')
-        """)
-    return cur
+        """
+    ))
 
 
-def collect_namex_data():
+def collect_namex_data() -> CursorResult:
     """Collect data from NameX."""
     current_app.logger.debug("Connecting to NameX Postgres instance...")
-    conn = psycopg2.connect(host=current_app.config.get("DB_HOST"),
-                            port=current_app.config.get("DB_PORT"),
-                            database=current_app.config.get("DB_NAME"),
-                            user=current_app.config.get("DB_USER"),
-                            password=current_app.config.get("DB_PASSWORD"))
-    cur = conn.cursor()
+    conn = namex_db.db.engine.connect()
     current_app.logger.debug("Collecting NameX data...")
-    cur.execute("""
+    return conn.execute(text("""
         SELECT r.nr_num, r.corp_num, r.state_cd as state, r.xpro_jurisdiction as jurisdiction,
             r.submitted_date as start_date, r.submit_count,
             n.name, n.choice,
@@ -123,24 +113,19 @@ def collect_namex_data():
             END as name_state
         FROM requests r
             JOIN names n on n.nr_id = r.id
-        """)
-    return cur
+        """
+    ))
 
 
-def collect_synonyms_data():
+def collect_synonyms_data() -> CursorResult:
     """Collect data from Synonyms."""
     current_app.logger.debug("Connecting to Synonym Postgres instance...")
-    conn = psycopg2.connect(host=current_app.config.get("SYN_DB_HOST"),
-                            port=current_app.config.get("SYN_DB_PORT"),
-                            database=current_app.config.get("SYN_DB_NAME"),
-                            user=current_app.config.get("SYN_DB_USER"),
-                            password=current_app.config.get("SYN_DB_PASSWORD"))
-    cur = conn.cursor()
+    conn = synonyms_db.db.engine.connect()
     current_app.logger.debug("Collecting Synonym data...")
     # TODO: verify can just collect 'synonym' table / 'synonyms_text' column (there's also synonym_orig / stems_text)
-    cur.execute("""
+    return conn.execute(text("""
         SELECT synonyms_text
         FROM synonym
         WHERE enabled='t'
-        """)
-    return cur
+        """
+    ))

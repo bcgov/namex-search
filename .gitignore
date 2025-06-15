@@ -138,3 +138,6 @@ __pycache__
 
 # ruff cache
 **/.ruff_cache
+
+# Service Account creds
+**/sa-secret/**

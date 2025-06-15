@@ -14,7 +14,9 @@ dependencies = [
     "psycopg2-binary (>=2.9.10,<3.0.0)",
     "python-dotenv (>=1.1.0,<2.0.0)",
     "namex-solr-api @ git+https://github.com/bcgov/namex-search.git@main#subdirectory=namex-solr-api",
-    "requests (>=2.32.3,<3.0.0)"
+    "requests (>=2.32.3,<3.0.0)",
+    "cloud-sql-python-connector (>=1.18.2,<2.0.0)",
+    "pg8000 (>=1.31.2,<2.0.0)"
 ]
 
 
