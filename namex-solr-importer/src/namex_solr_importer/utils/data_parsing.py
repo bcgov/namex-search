@@ -72,5 +72,5 @@ def parse_synonyms(data: list[tuple[str]]) -> dict[str,list[str]]:
     # i.e. [('test, tester, testing',), ('something, somethingelse',)] -> {'test': ['test', 'tester'...], 'something': [...]}
     parsed_synonyms = {}
     for synonym_list in data:
-        parsed_synonyms[synonym_list[0].split(',')[0].strip()] = [x.strip() for x in synonym_list[0].split(',')]
+        parsed_synonyms[synonym_list[0].split(",")[0].strip()] = [x.strip() for x in synonym_list[0].split(",")]
     return parsed_synonyms
