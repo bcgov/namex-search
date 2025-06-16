@@ -588,7 +588,7 @@
   </fieldType>
   <fieldType name="base_ngram" class="solr.TextField">
     <analyzer type="index">
-      <charFilter name="patternReplace" pattern="([()^{}\|])" replacement=""/>
+      <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
       <filter name="nGram" maxGramSize="50" minGramSize="1"/>
@@ -618,7 +618,8 @@
       <filter name="lowercase"/>
       <filter name="wordDelimiterGraph" generateWordParts="0" splitOnNumerics="0" catenateAll="1" generateNumberParts="0"/>
       <filter name="flattenGraph"/>
-      <filter name="edgeNGram" maxGramSize="15" minGramSize="1"/>
+      <!-- NOTE: should be long enough for the longest business name -->
+      <filter name="edgeNGram" maxGramSize="1000" minGramSize="1"/>
     </analyzer>
     <analyzer type="query">
       <tokenizer name="keyword"/>
@@ -628,7 +629,7 @@
   </fieldType>
   <fieldType name="multi_word_ngram" class="solr.TextField">
     <analyzer type="index">
-      <charFilter name="patternReplace" pattern="([()^{}\|])" replacement=""/>
+      <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
       <charFilter name="patternReplace" pattern="([&amp;+]+)" replacement=" and "/>
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
@@ -645,7 +646,7 @@
   </fieldType>
   <fieldType name="text_stemmed" class="solr.TextField" positionIncrementGap="100">
     <analyzer type="index">
-      <charFilter name="patternReplace" pattern="([()^{}\|])" replacement=""/>
+      <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
       <charFilter name="patternReplace" pattern="([&amp;+]+)" replacement=" and "/>
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
@@ -664,7 +665,7 @@
   </fieldType>
   <fieldType name="text_stemmed_agro" class="solr.TextField" positionIncrementGap="100">
     <analyzer type="index">
-      <charFilter name="patternReplace" pattern="([()^{}\|])" replacement=""/>
+      <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
       <charFilter name="patternReplace" pattern="([&amp;+]+)" replacement=" and "/>
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
@@ -683,7 +684,7 @@
   </fieldType>
   <fieldType name="text_extra" class="solr.TextField" positionIncrementGap="100">
     <analyzer type="index">
-      <charFilter name="patternReplace" pattern="([()^{}\|.])" replacement=""/>
+      <charFilter name="patternReplace" pattern="([()^{}\\|.])" replacement=""/>
       <charFilter name="patternReplace" pattern="([&amp;+]+)" replacement=" and "/>
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
@@ -698,7 +699,7 @@
   </fieldType>
   <fieldType name="synonym" class="solr.TextField">
     <analyzer type="index">
-      <charFilter name="patternReplace" pattern="([()^{}\|])" replacement=""/>
+      <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
       <filter name="managedSynonymGraph" managed="ALL"/>
@@ -725,14 +726,16 @@
   <field name="type" type="string" docValues="true" indexed="true" stored="true"/>
   <field name="names" type="string" indexed="true" stored="true" multiValued="true"/>
   <!-- Name docs (under 'names') -->
+  <field name="choice" type="pint" indexed="false" stored="true"/>
   <field name="name" type="string" indexed="false" stored="true"/>
   <field name="name_q" type="text_stemmed" indexed="true" stored="false"/>
+  <field name="name_q_exact" type="single_word_edgeNgram" indexed="true" stored="false"/>
   <field name="name_q_single_term" type="multi_word_ngram" indexed="true" stored="false"/>
   <field name="name_q_stem_agro" type="text_stemmed_agro" indexed="true" stored="false"/>
   <field name="name_q_synonym" type="synonym" indexed="true" stored="false"/>
   <field name="name_q_xtra" type="text_extra" indexed="true" stored="false"/>
   <field name="name_state" type="string" docValues="true" indexed="true" stored="true"/>
-  <field name="submit_count" type="pint" stored="true"/>
+  <field name="submit_count" type="pint" indexed="false" stored="true"/>
   <field name="parent_id" type="string" indexed="false" stored="true"/>
   <field name="parent_jurisdiction" type="string" indexed="false" stored="true"/>
   <field name="parent_start_date" type="string" indexed="false" stored="true"/>
@@ -743,6 +746,7 @@
   <copyField source="corp_num" dest="corp_num_q_edge"/>
   <copyField source="nr_num" dest="nr_num_q"/>
   <copyField source="nr_num" dest="nr_num_q_edge"/>
+  <copyField source="name" dest="name_q_exact"/>
   <copyField source="name" dest="name_q"/>
   <copyField source="name" dest="name_q_single_term"/>
   <copyField source="name" dest="name_q_stem_agro"/>

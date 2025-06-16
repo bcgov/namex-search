@@ -42,9 +42,9 @@ from flask_cors import cross_origin
 from namex_solr_api.exceptions import exception_response
 from namex_solr_api.models import SearchHistory, User
 from namex_solr_api.services import jwt, solr
-from namex_solr_api.services.base_solr.utils import QueryParams, prep_query_str
+from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
-from namex_solr_api.services.namex_solr.utils import namex_search
+from namex_solr_api.services.namex_solr.utils import namex_search, prep_query_str_namex
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
 
@@ -66,21 +66,21 @@ def possible_conflict_names():
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
         query = {
-            "value": prep_query_str(value),
-            PCField.CORP_NUM_Q.value: prep_query_str(query_json.get(PCField.CORP_NUM.value, "")),
-            PCField.NR_NUM_Q.value: prep_query_str(query_json.get(PCField.NR_NUM.value, ""))
+            "value": prep_query_str_namex(value, "replace"),
+            PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
+            PCField.NR_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.NR_NUM.value, ""))
         }
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
         # TODO: verify these states
-        conflict_states = ["ACT", "LIQ", "APPROVED", "CONDITION"]
+        conflict_states = ["ACTIVE", "APPROVED", "CONDITION"]
         categories = {
             PCField.JURISDICTION: categories_json.get(PCField.JURISDICTION.value, None),
             PCField.STATE: categories_json.get(PCField.STATE.value, conflict_states)
         }
         # set nested child query params
         child_query = {
-            NameField.NAME_Q_SINGLE.value: prep_query_str(query_json.get(NameField.NAME.value, ""))
+            NameField.NAME_Q_SINGLE.value: prep_query_str_namex(query_json.get(NameField.NAME.value, ""))
         }
         # set nested child faceted category params
         # TODO: verify these states
@@ -119,6 +119,7 @@ def possible_conflict_names():
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
+            full_query_boosts=solr.get_name_search_full_query_boost(value)
         )
 
         results = namex_search(params, solr, True)
@@ -172,9 +173,9 @@ def nrs():
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
         query = {
-            "value": prep_query_str(value),
-            PCField.CORP_NUM_Q.value: prep_query_str(query_json.get(PCField.CORP_NUM.value, "")),
-            PCField.NR_NUM_Q.value: prep_query_str(query_json.get(PCField.NR_NUM.value, ""))
+            "value": prep_query_str_namex(value),
+            PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
+            PCField.NR_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.NR_NUM.value, ""))
         }
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
@@ -185,7 +186,7 @@ def nrs():
         }
         # set nested child query params
         child_query = {
-            NameField.NAME_Q_SINGLE.value: prep_query_str(query_json.get(NameField.NAME.value, ""))
+            NameField.NAME_Q_SINGLE.value: prep_query_str_namex(query_json.get(NameField.NAME.value, ""))
         }
         # set nested child faceted category params
         child_categories = {
@@ -225,6 +226,8 @@ def nrs():
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
+            # NOTE: add items to this to improve ordering as needed
+            full_query_boosts=[]
         )
 
         results = namex_search(params, solr, False)

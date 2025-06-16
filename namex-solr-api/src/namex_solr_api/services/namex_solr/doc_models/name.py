@@ -43,6 +43,7 @@ class NameField(BaseEnum):
     # unique key for all docs
     UNIQUE_KEY = "id"
     # stored fields
+    CHOICE = "choice"
     NAME = "name"
     NAME_STATE = "name_state"
     SUBMIT_COUNT = "submit_count"
@@ -53,6 +54,7 @@ class NameField(BaseEnum):
     PARENT_TYPE = "parent_type"
     # query fields
     NAME_Q = "name_q"  # minimal stem
+    NAME_Q_EXACT = "name_q_exact"  # edge ngram
     NAME_Q_SINGLE = "name_q_single_term"  # ngram
     NAME_Q_AGRO = "name_q_stem_agro"  # aggressive stem
     NAME_Q_SYN = "name_q_synonym"  # synonym
@@ -67,9 +69,10 @@ class Name:
     """Class representation for a solr name doc."""
     name: str
     # TODO: review existing states (A, C, R, APPROVED, CONDITION) -- are A/APPROVED the same? Are C/CONDITION the same?
-    # adding new states for corp name: 'CORP', and nr name: 'D'
+    # adding new states for corp name: 'CORP', and nr name: 'NE'
     name_state: str
-    id: str | None = None  # rely on Solr to create the id
+    choice: int | None = None
+    id: str | None = None  # set by parent
     submit_count: int | None = None
     parent_id: str | None = None  # corp num or nr num
     parent_jurisdiction: str | None = None

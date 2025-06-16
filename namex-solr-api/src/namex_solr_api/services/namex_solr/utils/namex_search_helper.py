@@ -49,14 +49,15 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
         fuzzy_fields=params.query_fuzzy_fields,
         synonym_fields=params.query_synonym_fields,
         is_child_search=is_name_search)
+
     # boosts for term order result ordering
-    if is_name_search and params.query["value"] and len(params.query["value"].split()) > 1:
-        # this is a name search and the searched value is 2 terms or more
-        initial_queries["query"] = (f'({initial_queries["query"]})' +
-            f' AND (({NameField.NAME_Q.value}:"{params.query["value"]}"~5^5)' +
-            f' OR ({NameField.NAME_Q_AGRO.value}:"{params.query["value"]}"~10^3)' +
-            f' OR ({NameField.NAME_Q_SYN.value}:"{params.query["value"]}"~10^2))'
-        )
+    for info in params.full_query_boosts:
+        initial_queries["query"] += f' OR ({info["field"].value}:"{info["value"]}"'
+        if fuzzy := info.get("fuzzy"):
+            initial_queries["query"] += f'~{fuzzy}^{info["boost"]})'
+        else:
+            initial_queries["query"] += f'^{info["boost"]})'
+
     # add defaults
     parent_field = NameField.PARENT_TYPE.value if is_name_search else PCField.TYPE.value
     solr_payload = {

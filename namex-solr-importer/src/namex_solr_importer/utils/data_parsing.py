@@ -31,7 +31,46 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Data parsing functions."""
+from datetime import datetime
+
+from namex_solr_api.services.namex_solr.doc_models import Name, PossibleConflict
+
+
+def _parse_names(data: dict, type: str) -> list[Name]:
+    """Parse the name data as a list of Name."""
+    if type == "CORP":
+        return [Name(name=data["name"], name_state="CORP")]
+
+    names: list[Name] = []
+    for name_data in data["names"]:
+        names.append(Name(name=name_data["name"],
+                          name_state=name_data["name_state"],
+                          submit_count=name_data["submit_count"],
+                          choice=name_data.get("choice")))
+    return names
+
+
+def parse_conflict(data: dict, type: str) -> PossibleConflict:
+    """Parse the data as a PossibleConflict."""
+    if start_date := data.get("start_date"):
+        converted_start_date = datetime.isoformat(start_date, timespec="seconds").replace("+00:00", "")
+    return PossibleConflict(
+        id=data["nr_num"] if type == "NR" else data["corp_num"],
+        names=_parse_names(data, type),
+        state=data["state"],
+        type=type,
+        corp_num=data.get("corp_num"),
+        jurisdiction=data.get("jurisdiction") or "BC",
+        nr_num=data.get("nr_num"),
+        start_date=converted_start_date,
+    )
+
+
+def parse_synonyms(data: list[tuple[str]]) -> dict[str,list[str]]:
+    """Parse the synonym data in preparation for namex solr api update call."""
+    # i.e. [('test, tester, testing',), ('something, somethingelse',)] -> {'test': ['test', 'tester'...], 'something': [...]}
+    parsed_synonyms = {}
+    for synonym_list in data:
+        parsed_synonyms[synonym_list[0].split(",")[0].strip()] = [x.strip() for x in synonym_list[0].split(",")]
+    return parsed_synonyms

@@ -31,7 +31,14 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Version of this service in PEP440.
+
+[N!]N(.N)*[{a|b|rc}N][.postN][.devN]
+Epoch segment: N!
+Release segment: N(.N)*
+Pre-release segment: {a|b|rc}N
+Post-release segment: .postN
+Development release segment: .devN
+"""
+
+__version__ = "0.1.0"

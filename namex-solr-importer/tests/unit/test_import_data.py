@@ -31,7 +31,9 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Test Suite to ensure reindexing works as expected."""
+
+def test_data_import_handler(app):
+    """Secure the data import functionality."""
+    # TODO: mock data / solr etc. and run
+    assert True

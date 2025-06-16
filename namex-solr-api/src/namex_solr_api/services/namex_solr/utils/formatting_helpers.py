@@ -34,24 +34,12 @@
 """Solr formatting functions."""
 import re
 
+from flask import current_app
 
-def parse_facets(facet_data: dict) -> dict:
-    """Return formatted solr facet response data."""
-    facet_info = facet_data.get("facets", {})
-    facets = {}
-    for category in facet_info:
-        if category == "count":
-            continue
-        facets[category] = []
-        for item in facet_info[category]["buckets"]:
-            new_category = {"value": item["val"], "count": item["count"]}
-            if parent_count := item.get("by_parent", None):
-                new_category["parentCount"] = parent_count
-            facets[category].append(new_category)
+from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
 
-    return {"fields": facets}
 
-def prep_query_str(query: str, dash: str | None = None, replace_and = True) -> str:
+def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True, remove_designations = True) -> str:
     r"""Return the query string prepped for solr call.
 
     Rules:
@@ -63,35 +51,13 @@ def prep_query_str(query: str, dash: str | None = None, replace_and = True) -> s
         - (default) replace &,+ with ' and '
         - (optional) replace - with '', ' ', or ' - '
         - (optional) replace ' - ' with '-'
+        - (optional) remove designations
     """
     if not query:
         return ""
 
-    rmv_doubles = r"([&+]){2,}"
-    rmv_all = r"([()^{}|\\])"
-    esc_begin = r"(^|\s)([+\-/!])"
-    esc_all = r'([:~<>?\"\[\]])'
-    special_and = r"([&+])"
-    rmv_dash = r"(-)"
-    pad_dash = r"(\S)(-)(\S)"
-    tighten_dash = r"(\s+)(-)(\s+)"
+    if remove_designations and (designations := current_app.config.get("DESIGNATIONS")):
+        designation_rgx = fr'({"|".join(designations)})$'
+        query = re.sub(designation_rgx, r"", query)
 
-    query = re.sub(rmv_doubles, r"\1", query.lower())
-    query = re.sub(rmv_all, "", query)
-    if replace_and:
-        query = re.sub(special_and, r" and ", query)
-    if dash:
-        if dash == "replace":
-            query = re.sub(rmv_dash, r" ", query)
-        if dash == "remove":
-            query = re.sub(rmv_dash, r"", query)
-        if dash == "pad":
-            query = re.sub(pad_dash, r"\1 \2 \3", query)
-        if dash == "tighten":
-            query = re.sub(tighten_dash, r"\2", query)
-        if dash == "tighten-remove":
-            query = re.sub(tighten_dash, r"", query)
-
-    query = re.sub(esc_begin, r"\1\\\2", query)
-    query = re.sub(esc_all, r"\\\1", query)
-    return query.lower().replace("  ", " ").strip()
+    return prep_query_str(query, dash, replace_and)

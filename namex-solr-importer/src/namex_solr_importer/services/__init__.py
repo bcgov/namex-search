@@ -31,7 +31,13 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Services used by the importer."""
+from .lear_db import LearDB
+from .namex_db import NamexDB
+from .oracle import OracleDB
+from .synonyms_db import SynonymsDB
+
+lear_db = LearDB()
+namex_db = NamexDB()
+oracle_db = OracleDB()
+synonyms_db = SynonymsDB()

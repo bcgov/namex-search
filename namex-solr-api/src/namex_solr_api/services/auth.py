@@ -67,11 +67,11 @@ class AuthService:
         """Initialize app dependent variables."""
         self.app = app
         self.svc_url = app.config.get('AUTH_SVC_URL')
-        self.timeout = app.config.get('AUTH_API_TIMEOUT', 20)
-        self.sso_svc_token_url = app.config.get('SSO_SVC_TOKEN_URL')
-        self.sso_svc_timeout = app.config.get('SSO_SVC_TIMEOUT', 20)
-        self.svc_acc_id = app.config.get('SVC_ACC_CLIENT_ID')
-        self.svc_acc_secret = app.config.get('SVC_ACC_CLIENT_SECRET')
+        self.timeout = app.config.get('AUTH_SVC_TIMEOUT', 20)
+        self.sso_svc_token_url = app.config.get('ACCOUNT_SVC_AUTH_URL')
+        self.sso_svc_timeout = app.config.get('ACCOUNT_SVC_TIMEOUT', 20)
+        self.svc_acc_id = app.config.get('ACCOUNT_SVC_CLIENT_ID')
+        self.svc_acc_secret = app.config.get('ACCOUNT_SVC_CLIENT_SECRET')
         auth_cache.init_app(app)
 
     @auth_cache.cached(timeout=300, key_prefix='view/token')

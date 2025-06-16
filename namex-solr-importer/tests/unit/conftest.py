@@ -31,7 +31,19 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Common setup and fixtures for the pytest suite used by this service."""
+import os
+
+import pytest
+
+from namex_solr_importer import create_app
+
+os.environ['DEPLOYMENT_ENV'] = 'testing'
+
+
+@pytest.fixture(scope='session')
+def app():
+    """Return a session-wide application configured in TEST mode."""
+    _app = create_app('testing')
+    with _app.app_context():
+        yield _app

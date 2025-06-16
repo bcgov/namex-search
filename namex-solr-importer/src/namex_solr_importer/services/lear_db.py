@@ -31,7 +31,40 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Create lear db connection.
+
+These will get initialized by the application.
+"""
+from flask import Flask
+
+from namex_solr_importer.services.base_db import BaseDB, DBConfig
+
+
+class LearDB:
+    """LEAR db connection."""
+
+    def __init__(self, app: Flask | None = None):
+        self.db = None
+        if app:
+            self.init_app(app)
+
+    def init_app(self, app: Flask, test_connection=True):
+        """Initialize with option to skip connection test."""
+        try:
+            db_config = DBConfig(
+                instance_connection_name=app.config["LEAR_DB_CONNECTION_NAME"],
+                database=app.config["LEAR_DB_NAME"],
+                user=app.config["LEAR_DB_USER"],
+                enable_iam_auth=True,
+                credentials_path=app.config["GOOGLE_APPLICATION_CREDENTIALS_LEAR"],
+                password=app.config["LEAR_DB_PASSWORD"],
+                host=app.config["LEAR_DB_HOST"],
+                port=app.config["LEAR_DB_PORT"]
+            )
+            self.db = BaseDB(db_config, test_connection)
+
+        except Exception as e:
+            app.logger.error(f"LEAR db init failed: {e!s}")
+            if self.db and self.db.connector:
+                self.db.connector.close()
+            raise

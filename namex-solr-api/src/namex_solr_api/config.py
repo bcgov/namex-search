@@ -67,12 +67,39 @@ class Config:
 
     AUTH_SVC_URL = os.getenv("AUTH_API_URL", "") + os.getenv("AUTH_API_VERSION", "")
 
-    LD_SDK_KEY = os.getenv("LD_SDK_KEY", None)
-
     # Used by /sync endpoint
     MAX_BATCH_UPDATE_NUM = int(os.getenv("MAX_BATCH_UPDATE_NUM", "500"))
     # Used by /sync heartbeat
     LAST_REPLICATION_THRESHOLD = int(os.getenv("LAST_REPLICATION_THRESHOLD", "24"))  # hours
+    
+    # Used for search parsing
+    DESIGNATIONS = os.getenv("DESIGNATIONS")
+    if not DESIGNATIONS:
+        DESIGNATIONS = [
+            "corp\.",
+            "corporation",
+            "inc\.",
+            "incorporated",
+            "incorporee",
+            "l\.l\.c\.",
+            "limited",
+            "limited liability co\.",
+            "limited liability company",
+            "limited liability PARTNERSHIP",
+            "limitee",
+            "llc",
+            "llp",
+            "ltd.",
+            "ltee",
+            "sencrl",
+            "societe a responsabilite limitee",
+            "societe en nom collectif a responsabilite limitee",
+            "srl",
+            "ulc",
+            "unlimited liability company",
+        ]
+    else:
+        DESIGNATIONS = DESIGNATIONS.lower().split()
 
     # Cache stuff
     CACHE_TYPE = os.getenv("CACHE_TYPE", "FileSystemCache")

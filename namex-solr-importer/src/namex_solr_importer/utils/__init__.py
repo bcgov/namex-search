@@ -31,7 +31,8 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Manages util functions for the importer."""
+from .data_collection import collect_colin_data, collect_lear_data, collect_namex_data, collect_synonyms_data
+from .data_parsing import parse_conflict, parse_synonyms
+from .reindex import reindex_post, reindex_prep, reindex_recovery
+from .solr_api import import_conflicts, resync, update_synonyms

@@ -62,9 +62,20 @@ def update_synonyms():
         synonyms_terms: dict[SolrSynonymList.Type, list[str]] = {}
         synonyms_updated: dict[SolrSynonymList.Type, dict[str, list[str]]] = {}
         for synonym_type, synonym_lists in synonyms.items():
+            # i.e. syn_type = ALL  # noqa: ERA001
             syn_type = SolrSynonymList.Type(synonym_type)
+
+            # i.e. { ALL: ['bc', 'british columbia', 'ab', 'alberta'] }
             synonyms_terms[syn_type] = SolrSynonymList.create_or_replace_all(synonyms=synonym_lists, synonym_type=syn_type)
+
+            if request.args.get("prune") == "true":
+                # delete all synonyms under the type which were not referenced in this update
+                SolrSynonymList.delete_all(syn_type, synonyms_terms[syn_type])
+
+            # i.e [<SolrSynonymList synonym='bc', ...>, <SolrSynonymList synonym='ab', ...>, ...]
             terms_synonym_lists = SolrSynonymList.find_all_by_synonyms(synonyms_terms[syn_type], syn_type)
+
+            # i.e. { ALL: { 'bc': ['british columbia'], 'ab': ['alberta'], ... }}
             synonyms_updated = {syn_type: { x.synonym: x.synonym_list for x in terms_synonym_lists}}
 
         # update solr synonym file
