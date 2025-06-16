@@ -141,3 +141,6 @@ __pycache__
 
 # Service Account creds
 **/sa-secret/**
+
+# Obsidian
+**/.obsidian/**
