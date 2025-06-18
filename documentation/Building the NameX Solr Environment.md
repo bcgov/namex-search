@@ -24,7 +24,7 @@ DB_NAME=namex-solr-db-$ENV
    ```
 2. Create sql instance
    ```
-   gcloud sql instances create $DB_NAME --database-version=POSTGRES_15 --cpu=1 --memory=3.75GiB --zone=northamerica-northeast1-a --root-password=$DB_ROOT_PASSWORD --storage-type=SSD --storage-size=10GiB --project=$PROJECT_ID
+   gcloud sql instances create $DB_NAME --database-version=POSTGRES_17 --cpu=1 --memory=3.75GiB --zone=northamerica-northeast1-a --root-password=$DB_ROOT_PASSWORD --storage-type=SSD --storage-size=10GiB --project=$PROJECT_ID
    ```
 3. Port forward the new db and psql into it
    ```
@@ -219,7 +219,7 @@ DB_NAME=namex-solr-db-$ENV
      MACHINE_TYPE_LEADER=custom-4-20480
      ```
       ```
-     BOOT_DISK_SIZE_LEADER=20GiB
+     BOOT_DISK_SIZE_LEADER=24GiB
      ```
 	
    -  create the templates
