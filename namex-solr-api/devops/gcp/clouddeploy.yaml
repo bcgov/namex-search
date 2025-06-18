@@ -50,7 +50,7 @@ serialPipeline:
       deploy-project-id: "a083gt-dev"
       service-name: "namex-solr-api-dev"
       container-name: "namex-solr-api-dev"
-      cloudsql-instances: "a083gt-dev:northamerica-northeast1:namex-solr-db-dev"
+      cloudsql-instances: "a083gt-dev:northamerica-northeast1:namex-db-dev"
       service-account: "sa-api@a083gt-dev.iam.gserviceaccount.com"
  - targetId: a083gt-test
    profiles: [test]
@@ -63,7 +63,7 @@ serialPipeline:
       deploy-project-id: "a083gt-test"
       service-name: "namex-solr-api-test"
       container-name: "namex-solr-api-test"
-      cloudsql-instances: "a083gt-test:northamerica-northeast1:namex-solr-db-test"
+      cloudsql-instances: "a083gt-test:northamerica-northeast1:namex-db-test"
       service-account: "sa-api@a083gt-test.iam.gserviceaccount.com"
  - targetId: a083gt-tools
    profiles: [sandbox]
@@ -76,7 +76,7 @@ serialPipeline:
       deploy-project-id: "a083gt-integration"
       service-name: "namex-solr-api-sandbox"
       container-name: "namex-solr-api-sandbox"
-      cloudsql-instances: "a083gt-integration:northamerica-northeast1:namex-solr-db-sandbox"
+      cloudsql-instances: "a083gt-integration:northamerica-northeast1:namex-db-sandbox"
       service-account: "sa-api@a083gt-integration.iam.gserviceaccount.com"
  - targetId: a083gt-prod
    profiles: [prod]
@@ -92,6 +92,6 @@ serialPipeline:
       container-concurrency: "60"
       resources-cpu: "8000m"
       resources-memory: "4Gi"
-      cloudsql-instances: "a083gt-prod:northamerica-northeast1:namex-solr-db-prod"
+      cloudsql-instances: "a083gt-prod:northamerica-northeast1:namex-db-prod"
       service-account: "sa-api@a083gt-prod.iam.gserviceaccount.com"
       max-scale: "10"
