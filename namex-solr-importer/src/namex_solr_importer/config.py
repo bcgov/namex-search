@@ -122,15 +122,6 @@ class Config:
     LEAR_DB_CONNECTION_NAME = os.getenv("LEAR_DATABASE_CONNECTION_NAME")
     GOOGLE_APPLICATION_CREDENTIALS_LEAR = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_LEAR", "sa-secret/lear/secret.json")
 
-    # Synonyms db
-    SYN_DB_USER = os.getenv("SYN_DATABASE_USERNAME", "")
-    SYN_DB_PASSWORD = os.getenv("SYN_DATABASE_PASSWORD", "")
-    SYN_DB_NAME = os.getenv("SYN_DATABASE_NAME", "")
-    SYN_DB_HOST = os.getenv("SYN_DATABASE_HOST", "")
-    SYN_DB_PORT = os.getenv("SYN_DATABASE_PORT", "5432")
-    SYN_DB_CONNECTION_NAME = os.getenv("SYN_DATABASE_CONNECTION_NAME")
-    GOOGLE_APPLICATION_CREDENTIALS_SYN = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_SYN", "sa-secret/synonyms/secret.json")
-
     # Connection pool settings
     DB_MIN_POOL_SIZE = os.getenv("DATABASE_MIN_POOL_SIZE", "2")
     DB_MAX_POOL_SIZE = os.getenv("DATABASE_MAX_POOL_SIZE", "10")
