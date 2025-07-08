@@ -13,43 +13,6 @@ ENV=
 PROJECT_ID=$PROJECT-$ENV
 ```
 
-### Database
-1. Set name / password variables
-```
-DB_NAME=namex-solr-db-$ENV
-```
-   *NOTE: May need to put this in ""*
-   ```
-   DB_ROOT_PASSWORD=
-   ```
-2. Create sql instance
-   ```
-   gcloud sql instances create $DB_NAME --database-version=POSTGRES_17 --cpu=1 --memory=3.75GiB --zone=northamerica-northeast1-a --root-password=$DB_ROOT_PASSWORD --storage-type=SSD --storage-size=10GiB --project=$PROJECT_ID
-   ```
-3. Port forward the new db and psql into it
-   ```
-   CONNECTION_NAME=$(gcloud sql instances describe $DB_NAME --project=$PROJECT_ID --format="value(connectionName)")
-   ```
-   
-   ```
-   ~/cloud-sql-proxy $CONNECTION_NAME --port=54321&
-   ```
-   
-   ```
-   psql postgres -h localhost -p 54321 -U postgres
-   ```
-   
-   ```
-   <DB_ROOT_PASSWORD>
-   ```
-4. Create the db
-   ```
-   CREATE DATABASE namex_search;
-   ```
-5. Upgrade the db via the api (locally run the upgrade connected to the db instance)
-   ```
-   flask db upgrade
-   ```
 ### API Networking Stuff
 1. Reserve an external static IP for the api
    ```

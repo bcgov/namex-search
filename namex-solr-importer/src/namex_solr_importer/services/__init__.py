@@ -35,9 +35,7 @@
 from .lear_db import LearDB
 from .namex_db import NamexDB
 from .oracle import OracleDB
-from .synonyms_db import SynonymsDB
 
 lear_db = LearDB()
 namex_db = NamexDB()
 oracle_db = OracleDB()
-synonyms_db = SynonymsDB()
