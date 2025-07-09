@@ -50,6 +50,7 @@ bp = Blueprint("SYNONYMS", __name__, url_prefix="/synonyms")
 @jwt.requires_roles([User.Role.system.value])
 def update_synonyms():
     """Add/trigger update to synonyms lists."""
+    # NOTE: changes will not be reflected until the next daily reindex is finished
     try:
         if not (synonyms := request.json) or not isinstance(synonyms, dict):
             return bad_request_response("Invalid payload")
@@ -81,10 +82,6 @@ def update_synonyms():
         # update solr synonym file
         if SolrSynonymList.Type.ALL in synonyms_updated:
             solr.create_or_update_synonyms(SolrSynonymList.Type.ALL, synonyms_updated[SolrSynonymList.Type.ALL])
-
-        # reload the solr core (so it will register any changes for new documents added)
-        # NOTE: changes for currently indexed docs will not have effect until next reindex
-        solr.reload_core()
 
         return jsonify({"message": "Update successful"}), HTTPStatus.OK
 

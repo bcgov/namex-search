@@ -76,14 +76,14 @@ class Config:
     DESIGNATIONS = os.getenv("DESIGNATIONS")
     if not DESIGNATIONS:
         DESIGNATIONS = [
-            "corp\.",
+            "corp.",
             "corporation",
-            "inc\.",
+            "inc.",
             "incorporated",
             "incorporee",
-            "l\.l\.c\.",
+            "l.l.c.",
             "limited",
-            "limited liability co\.",
+            "limited liability co.",
             "limited liability company",
             "limited liability PARTNERSHIP",
             "limitee",
