@@ -1320,7 +1320,7 @@ structured-logging = {git = "https://github.com/bcgov/sbc-connect-common.git", r
 type = "git"
 url = "https://github.com/bcgov/namex-search.git"
 reference = "main"
-resolved_reference = "51fb186bab36bfeab5654bc1a2b98f998f480f87"
+resolved_reference = "87dbbbd1d6a10bfc008cb314422d2c94ef17ba84"
 subdirectory = "namex-solr-api"
 
 [[package]]

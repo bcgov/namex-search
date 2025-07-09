@@ -58,6 +58,6 @@ def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True
 
     if remove_designations and (designations := current_app.config.get("DESIGNATIONS")):
         designation_rgx = fr'({"|".join(designations)})$'
-        query = re.sub(designation_rgx, r"", query)
+        query = re.sub(designation_rgx, r"", query.lower())
 
     return prep_query_str(query, dash, replace_and)
