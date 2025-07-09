@@ -1,6 +1,6 @@
 [project]
 name = "namex-solr-api"
-version = "1.0.0"
+version = "1.0.1"
 description = ""
 authors = [
     {name = "Kial Jinnah",email = "kialj876@gmail.com"}
