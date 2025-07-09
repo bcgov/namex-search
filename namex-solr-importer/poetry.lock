@@ -1297,7 +1297,7 @@ files = [
 
 [[package]]
 name = "namex-solr-api"
-version = "1.0.0"
+version = "1.0.1"
 description = ""
 optional = false
 python-versions = ">=3.13,<4"
