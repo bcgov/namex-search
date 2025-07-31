@@ -91,12 +91,12 @@ class QueryBuilder:
 
             terms = value.split()
             if not child_q:
-                child_q = self.create_clause(key, terms[0], True)
+                child_q = self.create_clause(key, terms[0], True, True)
             else:
-                child_q += f" AND {self.create_clause(key, terms[0], True)}"
+                child_q += f" AND {self.create_clause(key, terms[0], True, True)}"
 
             for term in terms[1:]:
-                child_q += f" AND {self.create_clause(key, term, True)}"
+                child_q += f" AND {self.create_clause(key, term, True, True)}"
 
         if not child_q:
             return None
