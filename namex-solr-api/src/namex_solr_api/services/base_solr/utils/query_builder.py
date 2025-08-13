@@ -81,7 +81,7 @@ class QueryBuilder:
                 filters.append(self.create_clause(key, term, False, is_child_search))
         return filters
 
-    def build_child_query(self, child_query: dict[str, str]) -> str | None:
+    def build_child_query(self, child_query: dict[str, str], is_child_search: bool) -> str | None:
         """Return the child query fq."""
         # add filter clauses for child query items
         child_q = ""
@@ -91,12 +91,12 @@ class QueryBuilder:
 
             terms = value.split()
             if not child_q:
-                child_q = self.create_clause(key, terms[0], True, True)
+                child_q = self.create_clause(key, terms[0], True, is_child_search)
             else:
-                child_q += f" AND {self.create_clause(key, terms[0], True, True)}"
+                child_q += f" AND {self.create_clause(key, terms[0], True, is_child_search)}"
 
             for term in terms[1:]:
-                child_q += f" AND {self.create_clause(key, term, True, True)}"
+                child_q += f" AND {self.create_clause(key, term, True, is_child_search)}"
 
         if not child_q:
             return None
