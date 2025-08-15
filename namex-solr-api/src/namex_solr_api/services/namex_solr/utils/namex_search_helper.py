@@ -75,7 +75,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
                          is_child_search=is_name_search,
                          solr=solr)
     # child filter queries
-    if child_query := solr.query_builder.build_child_query(params.child_query):
+    if child_query := solr.query_builder.build_child_query(params.child_query, is_name_search):
         solr_payload["filter"].append(child_query)
     # child doc faceted filter queries
     add_category_filters(solr_payload=solr_payload,
