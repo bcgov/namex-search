@@ -20,7 +20,7 @@ eval $(poetry env activate)
 
 ### Run the importer
 ```bash
-python data_import_handler.py
+python import_data.py
 ```
 
 ### Run Linting

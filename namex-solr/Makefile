@@ -19,7 +19,7 @@ FOLLOWER_CORE:=name_request_follower
 #################################################################################
 build: build-leader build-follower
 build-follower:
-	docker build . -t $(DOCKER_NAME_FOLLOWER) \
+	podman build . -t $(DOCKER_NAME_FOLLOWER) \
 	    --platform linux/amd64 \
 	    --build-arg VCS_REF=$(shell git rev-parse --short HEAD) \
 	    --build-arg BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ") \
@@ -29,7 +29,7 @@ build-follower:
 			--build-arg JVM_MEM=1g
 
 build-leader:
-	docker build . -t $(DOCKER_NAME_LEADER) \
+	podman build . -t $(DOCKER_NAME_LEADER) \
 	    --platform linux/amd64 \
 	    --build-arg VCS_REF=$(shell git rev-parse --short HEAD) \
 	    --build-arg BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ") \
@@ -39,7 +39,7 @@ build-leader:
 			--build-arg JVM_MEM=2g
 
 build-local:
-	docker build . -t $(DOCKER_NAME_LOCAL) \
+	podman build . -t $(DOCKER_NAME_LOCAL) \
 	    --platform linux/amd64 \
 	    --build-arg VCS_REF=$(shell git rev-parse --short HEAD) \
 	    --build-arg BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ") \

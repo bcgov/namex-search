@@ -658,7 +658,7 @@
   <requestHandler name="/replication" class="solr.ReplicationHandler">
     <lst name="follower">
       <!-- updated after deployment to internal IP of leader vm -->
-      <str name="leaderUrl">${solr.leaderUrl:http://172.19.0.2:8983/solr/name_request}</str>
+      <str name="leaderUrl">http://10.89.1.2:8983/solr/name_request</str>
       <str name="pollInterval">00:00:30</str>
       <str name="compression">internal</str>
     </lst>
@@ -985,14 +985,16 @@
        results for a given query regardless of the normal lucene
        scoring.
     -->
-  <searchComponent name="elevator" class="solr.QueryElevationComponent" >
+
+  <!-- <searchComponent name="elevator" class="solr.QueryElevationComponent" >  -->
     <!-- pick a fieldType to analyze queries -->
-    <str name="queryFieldType">string</str>
+  <!--   <str name="queryFieldType">string</str>
     <str name="config-file">elevate.xml</str>
-  </searchComponent>
+  </searchComponent> -->
 
   <!-- A request handler for demonstrating the elevator component -->
-  <requestHandler name="/elevate" class="solr.SearchHandler" startup="lazy">
+
+  <!-- <requestHandler name="/elevate" class="solr.SearchHandler" startup="lazy">
     <lst name="defaults">
       <str name="echoParams">explicit</str>
     </lst>
@@ -1000,6 +1002,7 @@
       <str>elevator</str>
     </arr>
   </requestHandler>
+  -->
 
   <!-- Highlighting Component
 

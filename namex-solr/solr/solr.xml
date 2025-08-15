@@ -33,7 +33,7 @@
   <str name="modules">${solr.modules:}</str>
   <str name="allowPaths">${solr.allowPaths:/replication}</str>
   <!-- deployment allows all -->
-  <str name="allowUrls">${solr.allowUrls:172.19.0.2:8983/solr/name_request}</str>
+  <str name="allowUrls">${solr.allowUrls:10.89.1.2:8983/solr/name_request}</str>
   <str name="hideStackTrace">${solr.hideStackTrace:false}</str>
 
   <solrcloud>
