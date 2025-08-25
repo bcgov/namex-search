@@ -88,7 +88,7 @@ gcloud artifacts docker tags add northamerica-northeast1-docker.pkg.dev/$PROJECT
    ```
    NEW_LEADER_INTERNAL_IP=$(gcloud compute instances list --format="value(INTERNAL_IP)" --filter name:$NEW_LEADER_VM --project=$PROJECT_ID)
    ```
-6. Add the NEW leader instance to the leader network:
+6. Wait for startup script to complete, then add the NEW leader instance to the leader network:
     ```
     gcloud compute instance-groups unmanaged add-instances namex-solr-leader-grp-$ENV --zone northamerica-northeast1-a --instances $NEW_LEADER_VM --project $PROJECT_ID
     ```

@@ -171,27 +171,69 @@ PROJECT_ID=$PROJECT-$ENV
      ```
      IMAGE_LEADER=$(gcloud artifacts docker images list northamerica-northeast1-docker.pkg.dev/$IMAGE_PATH --filter IMAGE:namex-solr-leader --format="value(IMAGE)" --limit=1):$ENV
      ```
-
+     
      ```
-     MACHINE_TYPE_FOLLOWER=custom-2-13312
+     BOOT_DISK_IMAGE=cos-121-18867-199-34
      ```
      ```
-     BOOT_DISK_SIZE_FOLLOWER=15GiB
+     PATH_TO_STARTUP_SCRIPT=namex-solr/startupscript.txt
+     ```
+     
+     For DEV (only has Leader instance)
+     ```
+     MACHINE_TYPE_LEADER=custom-1-5120
      ```
       ```
-     MACHINE_TYPE_LEADER=custom-4-20480
+     BOOT_DISK_SIZE_LEADER=10GiB
+     ```
+     For TEST
+     ```
+     MACHINE_TYPE_FOLLOWER=custom-1-5120
+     ```
+     ```
+     BOOT_DISK_SIZE_FOLLOWER=10GiB
+     ```
+      ```
+     MACHINE_TYPE_LEADER=custom-1-5120
+     ```
+      ```
+     BOOT_DISK_SIZE_LEADER=10GiB
+     ```
+     For SANDBOX
+     ```
+     MACHINE_TYPE_FOLLOWER=custom-1-6656
+     ```
+     ```
+     BOOT_DISK_SIZE_FOLLOWER=16GiB
+     ```
+      ```
+     MACHINE_TYPE_LEADER=custom-1-6656
+     ```
+      ```
+     BOOT_DISK_SIZE_LEADER=24GiB
+     ```
+     For PROD
+     ```
+     MACHINE_TYPE_FOLLOWER=custom-1-8192-ext
+     ```
+     ```
+     BOOT_DISK_SIZE_FOLLOWER=16GiB
+     ```
+      ```
+     MACHINE_TYPE_LEADER=custom-2-10240
      ```
       ```
      BOOT_DISK_SIZE_LEADER=24GiB
      ```
 	
-   -  create the templates
+   -  create the templates. UPDATE THE STARTUP SCRIPT BEFORE RUNNING
     ```
-    gcloud compute instance-templates create-with-container $INSTANCE_TEMPLATE_FOLLOWER --project=$PROJECT_ID --machine-type=$MACHINE_TYPE_FOLLOWER --network-interface=network=default,network-tier=PREMIUM --maintenance-policy=MIGRATE --service-account=$SERVICE_ACCOUNT --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append --tags=$TAGS --container-image=$IMAGE_FOLLOWER --container-restart-policy=always --boot-disk-size=$BOOT_DISK_SIZE_FOLLOWER --boot-disk-type=pd-balanced --boot-disk-device-name=$DEVICE_NAME --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --labels=container-vm=cos-101-17162-210-60
+    gcloud compute instance-templates create $INSTANCE_TEMPLATE_FOLLOWER --project=$PROJECT_ID --machine-type=$MACHINE_TYPE_FOLLOWER --network-interface=network=default,network-tier=PREMIUM,stack-type=IPV4_ONLY --metadata=google-logging-enabled=true --metadata-from-file=startup-script=$PATH_TO_STARTUP_SCRIPT --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$SERVICE_ACCOUNT --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/trace.append --tags=$TAGS --create-disk=auto-delete=yes,boot=yes,device-name=$DEVICE_NAME,image=projects/cos-cloud/global/images/$BOOT_DISK_IMAGE,mode=rw,size=$BOOT_DISK_SIZE_FOLLOWER,type=pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any
     ```
+    UPDATE THE STARTUP SCRIPT AGAIN BEFORE RUNNING
    
     ```
-    gcloud compute instance-templates create-with-container $INSTANCE_TEMPLATE_LEADER --project=$PROJECT_ID --machine-type=$MACHINE_TYPE_LEADER --network-interface=network=default,network-tier=PREMIUM --maintenance-policy=MIGRATE --service-account=$SERVICE_ACCOUNT --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append --tags=$TAGS --container-image=$IMAGE_LEADER --container-restart-policy=always --boot-disk-size=$BOOT_DISK_SIZE_LEADER --boot-disk-type=pd-balanced --boot-disk-device-name=$DEVICE_NAME --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --labels=container-vm=cos-101-17162-210-60
+    gcloud compute instance-templates create $INSTANCE_TEMPLATE_LEADER --project=$PROJECT_ID --machine-type=$MACHINE_TYPE_LEADER --network-interface=network=default,network-tier=PREMIUM,stack-type=IPV4_ONLY --metadata=google-logging-enabled=true --metadata-from-file=startup-script=$PATH_TO_STARTUP_SCRIPT --maintenance-policy=MIGRATE --provisioning-model=STANDARD --service-account=$SERVICE_ACCOUNT --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/trace.append --tags=$TAGS --create-disk=auto-delete=yes,boot=yes,device-name=$DEVICE_NAME,image=projects/cos-cloud/global/images/$BOOT_DISK_IMAGE,mode=rw,size=$BOOT_DISK_SIZE_LEADER,type=pd-ssd --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any
     ```
 1. Update permissions to allow this environment to pull the image from tools
    ```
