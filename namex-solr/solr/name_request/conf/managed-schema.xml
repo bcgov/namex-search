@@ -703,6 +703,8 @@
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
       <filter name="managedSynonymGraph" managed="ALL"/>
+      <!-- May need to add this later. Docs say you need it, but so far it has no effect leaving it out -->
+      <!-- <filter name="flattenGraph" /> -->
       <filter name="asciiFolding"/>
       <filter name="classic"/>
     </analyzer>
