@@ -91,6 +91,12 @@ class SolrSynonymList(Base):
     @staticmethod
     def create_or_replace(synonym_type: SolrSynonymList.Type, synonym: str, synonym_list: list[str], replace: bool):
         """Create, Add to, or replace the given synonym inside the db."""
+        # NOTE: References to empty synonyms in solr will break the synonym filters
+        if not synonym or not synonym.strip():
+            # Ignore references to empty strings etc.
+            return
+        # Filter out any empty strings etc.
+        synonym_list = [syn.strip() for syn in synonym_list if syn]
         if synonym in synonym_list:
             # remove any reference to itself
             synonym_list.remove(synonym)
@@ -110,7 +116,7 @@ class SolrSynonymList(Base):
     def create_or_replace_all(synonyms: dict[str, list[str]], synonym_type: Type) -> list[str]:
         """Add or replace the given synonyms inside the db."""
         synonyms_updated = []
-        # TODO: confirm if words can span multiple synonym lists or not
+        # NOTE: Words should not span multiple synonym lists
         for synonym, synonym_list in synonyms.items():
             # NOTE: this will replace the exiting list
             SolrSynonymList.create_or_replace(synonym_type, synonym, synonym_list, True)
