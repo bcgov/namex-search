@@ -176,7 +176,7 @@ class QueryBuilder:
             elif new_synonym_terms := self.find_synonym_terms(term, term_index, terms, field):
                 synonym_info[field]["synonym_terms"] = new_synonym_terms
                 synonym_info[field]["synonym_start_index"] = term_index
-                synonym_clause = f"{field_value}:{' '.join(new_synonym_terms)}"
+                synonym_clause = f"{field_value}:{' '.join(new_synonym_terms)}^2"
 
             if synonym_clause:
                 term_clause = self.join_clause(term_clause, f"({synonym_clause})", "OR")
