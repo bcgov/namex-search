@@ -153,7 +153,8 @@ class QueryBuilder:
         term_index: int,
         synonym_info: dict,
         synonym_fields: dict[BaseEnum, str],
-        is_child_search: bool
+        is_child_search: bool,
+        boost_fields: dict[BaseEnum, int]
     ):
         """Return the term clause with the added synonym clauses."""
         term = terms[term_index]
@@ -179,6 +180,8 @@ class QueryBuilder:
                 synonym_clause = f"{field_value}:{' '.join(new_synonym_terms)}"
 
             if synonym_clause:
+                if field in boost_fields:
+                    synonym_clause += f"^{boost_fields[field]}"
                 term_clause = self.join_clause(term_clause, f"({synonym_clause})", "OR")
 
         return term_clause
@@ -202,7 +205,7 @@ class QueryBuilder:
             term_clause = self.build_term_clause(term, fields, boost_fields, fuzzy_fields, is_child_search)
 
             # Add the synonym field clauses
-            term_clause = self.build_term_synonym_clauses(term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search)
+            term_clause = self.build_term_synonym_clauses(term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search, boost_fields)
 
             # Join the term clause to the full query
             query_clause = self.join_clause(query_clause, f"({term_clause})", "AND")
