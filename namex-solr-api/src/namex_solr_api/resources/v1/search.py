@@ -103,7 +103,8 @@ def possible_conflict_names():
             query_boost_fields={
                 NameField.NAME_Q_AGRO: 2,
                 NameField.NAME_Q_SINGLE: 2,
-                NameField.NAME_Q_XTRA: 2
+                NameField.NAME_Q_XTRA: 2,
+                NameField.NAME_Q_SYN: 2
             },
             query_fields={
                 NameField.NAME_Q: "child",
