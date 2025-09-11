@@ -115,7 +115,7 @@ def possible_conflict_names():
             query_fuzzy_fields={
                 NameField.NAME_Q: {"short": 1, "long": 2},
                 NameField.NAME_Q_AGRO: {"short": 1, "long": 2},
-                NameField.NAME_Q_SINGLE: {"short": 1, "long": 2}
+                NameField.NAME_Q_SINGLE: {"short": 0, "long": 2}
             },
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
