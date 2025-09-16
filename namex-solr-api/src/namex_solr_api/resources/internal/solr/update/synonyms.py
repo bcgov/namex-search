@@ -82,6 +82,9 @@ def update_synonyms():
         # update solr synonym file
         if SolrSynonymList.Type.ALL in synonyms_updated:
             solr.create_or_update_synonyms(SolrSynonymList.Type.ALL, synonyms_updated[SolrSynonymList.Type.ALL])
+            # Reload the solr core so it will register any changes for new updates/imports. It will throw an error if there is some issue with the synonym lists.
+            # NOTE: Any existing docs will not pickup the new synonym changes until the next reindex
+            solr.reload_core()
 
         return jsonify({"message": "Update successful"}), HTTPStatus.OK
 

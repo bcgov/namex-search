@@ -42,7 +42,7 @@ Development release segment: .devN
 """
 import os
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 def _get_commit_hash():
     """Return the containers ref if present."""
