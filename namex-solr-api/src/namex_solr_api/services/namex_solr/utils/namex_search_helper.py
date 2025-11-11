@@ -32,6 +32,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """NameX solr search functions."""
+import re
+
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr import NamexSolr
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
@@ -68,6 +70,11 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
         },
         "fields": params.fields
     }
+    if params.highlightedFields:
+        solr_payload = {
+            **solr_payload,
+            **namex_search_highlighting(params)
+        }
     # base doc faceted filters
     add_category_filters(solr_payload=solr_payload,
                          categories=params.categories,
@@ -84,4 +91,34 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
                          is_child_search=is_name_search,
                          solr=solr)
 
-    return solr.query(solr_payload, params.start, params.rows)
+    resp: dict[str, dict[str, dict[str, list[str]]]] = solr.query(solr_payload, params.start, params.rows)
+    if solr_highlighting := resp.get('highlighting'):
+        parsed_highlighting = {}
+        for result_id, result in solr_highlighting.items():
+            parsed_highlighting[result_id] = {}
+            for field_enum in params.highlightedFields:
+                if field_highlights := result.get(field_enum.value):
+                    parsed_highlighting[result_id][field_enum.value] = []
+                    for highlight in field_highlights:
+                        parsed_highlighting[result_id][field_enum.value] += namex_search_parse_highlighting(highlight)
+        resp['highlighting'] = parsed_highlighting
+    return resp
+
+
+def namex_search_highlighting(params: QueryParams):
+    """Return the the highlighting params for the query."""
+    return {
+        "params": {
+            "hl": "on",
+            "hl.method": "unified",
+            "hl.requireFieldMatch": "true",
+            "hl.tag.pre": "|||",
+            "hl.tag.post": "|||",
+            "hl.fl": ",".join([x.value for x in params.highlightedFields])
+        }
+    }
+
+def namex_search_parse_highlighting(highlighted_value: str) -> list[str]:
+    """Return the parsed list of highlighted terms."""
+    highlighted_rgx = r'\|\|\|([^\|]*)\|\|\|'
+    return re.findall(highlighted_rgx, highlighted_value)

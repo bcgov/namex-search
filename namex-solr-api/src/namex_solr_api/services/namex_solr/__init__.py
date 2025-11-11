@@ -79,6 +79,7 @@ class NamexSolr(Solr):
             NameField.PARENT_START_DATE.value,
             NameField.PARENT_STATE.value,
             NameField.PARENT_TYPE.value,
+            NameField.UNIQUE_KEY.value,
         ]
 
     def create_or_replace_docs(self,
