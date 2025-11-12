@@ -143,7 +143,7 @@ def possible_conflict_names():
             docs.append({
                 **result,
                 "highlighting": {
-                    "stems": stem_highlights,
+                    "stems": stem_highlights or [],
                     "synonyms": synonym_highlights
                 }
             })
