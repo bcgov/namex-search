@@ -33,18 +33,18 @@ PROJECT_ID=$PROJECT-$ENV
 	```
 3. Tag the leader and follower images in preparation for the GCP atrifactory repo push:
    ```
-   docker tag namex-solr-leader northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/namex-solr-leader:dev
+   docker tag name-request-solr-leader northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/name-request-solr-leader:dev
 	```
 	```
-   docker tag namex-solr-follower northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/namex-solr-follower:dev
+   docker tag name-request-solr-follower northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/name-request-solr-follower:dev
 	```
 4. Push the images to the GCP artifiactory repo:
    ```
-   docker push northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/namex-solr-leader:dev
+   docker push northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/name-request-solr-leader:dev
 	```
 
 	```
-   docker push northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/namex-solr-follower:dev
+   docker push northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/name-request-solr-follower:dev
 	```
 
 ### Tagging the images (for TEST / PROD only)
@@ -55,11 +55,11 @@ SOURCE_TAG=dev
 ```
 
 ```
-gcloud artifacts docker tags add northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/namex-solr-leader:$SOURCE_TAG northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/namex-solr-leader:$ENV
+gcloud artifacts docker tags add northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/name-request-solr-leader:$SOURCE_TAG northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/name-request-solr-leader:$ENV
 ```
 
 ```
-gcloud artifacts docker tags add northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/namex-solr-follower:$SOURCE_TAG northamerica-northeast1-docker.pkg.dev/$PROJECT--tools/temp-namex/namex-solr-follower:$ENV
+gcloud artifacts docker tags add northamerica-northeast1-docker.pkg.dev/$PROJECT-dev/temp-namex/name-request-solr-follower:$SOURCE_TAG northamerica-northeast1-docker.pkg.dev/$PROJECT--tools/temp-namex/name-request-solr-follower:$ENV
 ```
 
 ### Deploying the new instances
