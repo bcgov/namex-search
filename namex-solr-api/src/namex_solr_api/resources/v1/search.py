@@ -140,7 +140,7 @@ def possible_conflict_names():
                 exact_highlights_full_terms = split_highlights(exact_highlights_full_terms)
                 exact_highlights = []
                 for term in params.query["value"].split(" "):
-                    if any([x for x in exact_highlights_full_terms if term.upper() in x]):
+                    if any(x for x in exact_highlights_full_terms if term.upper() in x):
                         exact_highlights.append(term.upper())
             if stem_highlights := highlight_raw.get(NameField.NAME_Q_AGRO.value):
                 stem_highlights = [x for x in split_highlights(stem_highlights) if x not in (exact_highlights or [])]
