@@ -70,7 +70,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
         },
         "fields": params.fields
     }
-    if params.highlightedFields:
+    if params.highlighted_fields:
         solr_payload = {
             **solr_payload,
             **namex_search_highlighting(params)
@@ -96,7 +96,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
         parsed_highlighting = {}
         for result_id, result in solr_highlighting.items():
             parsed_highlighting[result_id] = {}
-            for field_enum in params.highlightedFields:
+            for field_enum in params.highlighted_fields:
                 if field_highlights := result.get(field_enum.value):
                     parsed_highlighting[result_id][field_enum.value] = []
                     for highlight in field_highlights:
@@ -114,7 +114,7 @@ def namex_search_highlighting(params: QueryParams):
             "hl.requireFieldMatch": "true",
             "hl.tag.pre": "|||",
             "hl.tag.post": "|||",
-            "hl.fl": ",".join([x.value for x in params.highlightedFields])
+            "hl.fl": ",".join([x.value for x in params.highlighted_fields])
         }
     }
 

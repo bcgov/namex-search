@@ -100,7 +100,7 @@ def possible_conflict_names():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields_nested,
-            highlightedFields=[NameField.NAME_Q_AGRO, NameField.NAME_Q_SYN],
+            highlighted_fields=[NameField.NAME_Q_AGRO, NameField.NAME_Q_SYN],
             query_boost_fields={
                 NameField.NAME_Q_AGRO: 2,
                 NameField.NAME_Q_SINGLE: 2,
@@ -226,7 +226,7 @@ def nrs():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields,
-            highlightedFields=[],
+            highlighted_fields=[],
             query_boost_fields={
                 NameField.NAME_Q: 2,
                 NameField.NAME_Q_AGRO: 2,

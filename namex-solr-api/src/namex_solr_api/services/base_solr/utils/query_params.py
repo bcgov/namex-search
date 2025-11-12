@@ -48,7 +48,7 @@ class QueryParams:  # pylint: disable=too-few-public-methods
     child_query: dict[str, str]
     child_categories: dict[BaseEnum, list[str]]
     fields: list[str]
-    highlightedFields: list[BaseEnum]
+    highlighted_fields: list[BaseEnum]
     query_fields: dict[BaseEnum, str]
     query_boost_fields: dict[BaseEnum, int]
     query_fuzzy_fields: dict[BaseEnum, dict[str, int]]
