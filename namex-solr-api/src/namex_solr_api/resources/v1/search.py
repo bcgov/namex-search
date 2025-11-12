@@ -100,6 +100,7 @@ def possible_conflict_names():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields_nested,
+            highlighted_fields=[NameField.NAME_Q_AGRO, NameField.NAME_Q_SYN],
             query_boost_fields={
                 NameField.NAME_Q_AGRO: 2,
                 NameField.NAME_Q_SINGLE: 2,
@@ -124,8 +125,28 @@ def possible_conflict_names():
         )
 
         results = namex_search(params, solr, True)
-        docs = results.get("response", {}).get("docs")
+        solr_highlighting: dict[str, dict[str, list[str]]] = results.get("highlighting")
+        docs = []
+        for result in results.get("response", {}).get("docs"):
+            def split_highlights(highlights: list[str]):
+                """Split list of strings into list of single terms"""
+                resp = []
+                for highlight in highlights:
+                    resp += highlight.split(" ")
+                return resp
 
+            highlight_raw = solr_highlighting[result[NameField.UNIQUE_KEY.value]]
+            if stem_highlights := highlight_raw.get(NameField.NAME_Q_AGRO.value):
+                stem_highlights = split_highlights(stem_highlights)
+            if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value):
+                synonym_highlights = [x for x in synonym_highlights if x not in (stem_highlights or [])]
+            docs.append({
+                **result,
+                "highlighting": {
+                    "stems": stem_highlights or [],
+                    "synonyms": synonym_highlights
+                }
+            })
         # save search in the db
         SearchHistory(
             query=request_json,
@@ -150,7 +171,7 @@ def possible_conflict_names():
                     "start": start or solr.default_start,
                 },
                 "totalResults": results.get("response", {}).get("numFound"),
-                "results": docs,
+                "results": docs
             },
         }
         return jsonify(response), HTTPStatus.OK
@@ -205,6 +226,7 @@ def nrs():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields,
+            highlighted_fields=[],
             query_boost_fields={
                 NameField.NAME_Q: 2,
                 NameField.NAME_Q_AGRO: 2,
