@@ -57,6 +57,7 @@ class NameField(BaseEnum):
     NAME_Q_EXACT = "name_q_exact"  # edge ngram
     NAME_Q_SINGLE = "name_q_single_term"  # ngram
     NAME_Q_AGRO = "name_q_stem_agro"  # aggressive stem
+    NAME_Q_STEM_HIGHLIGHT = "name_q_stem_highlight"  # aggressive stem used for highlight info
     NAME_Q_SYN = "name_q_synonym"  # synonym
     NAME_Q_XTRA = "name_q_xtra"  # classic tokenizer on query (others using whitespace - effects periods, dashes etc.)
 

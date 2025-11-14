@@ -100,7 +100,7 @@ def possible_conflict_names():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields_nested,
-            highlighted_fields=[NameField.NAME_Q_SINGLE, NameField.NAME_Q_AGRO, NameField.NAME_Q_SYN],
+            highlighted_fields=[NameField.NAME_Q_SINGLE, NameField.NAME_Q_STEM_HIGHLIGHT, NameField.NAME_Q_SYN],
             query_boost_fields={
                 NameField.NAME_Q_AGRO: 2,
                 NameField.NAME_Q_SINGLE: 2,
@@ -110,6 +110,7 @@ def possible_conflict_names():
             query_fields={
                 NameField.NAME_Q: "child",
                 NameField.NAME_Q_AGRO: "child",
+                NameField.NAME_Q_STEM_HIGHLIGHT: "child",
                 NameField.NAME_Q_SINGLE: "child",
                 NameField.NAME_Q_XTRA: "child",
             },
@@ -136,24 +137,26 @@ def possible_conflict_names():
                 return resp
 
             highlight_raw = solr_highlighting[result[NameField.UNIQUE_KEY.value]]
-            if exact_highlights_full_terms := highlight_raw.get(NameField.NAME_Q_SINGLE.value):
+            exact_highlights = []
+            stem_highlights = []
+            synonym_highlights = []
+            if exact_highlights_full_terms := highlight_raw.get(NameField.NAME_Q_SINGLE.value, []):
                 exact_highlights_full_terms = split_highlights(exact_highlights_full_terms)
-                exact_highlights = []
                 for term in params.query["value"].split(" "):
                     if any(x for x in exact_highlights_full_terms if term.upper() in x):
                         exact_highlights.append(term.upper())
-            if stem_highlights := highlight_raw.get(NameField.NAME_Q_AGRO.value):
-                stem_highlights = [x for x in split_highlights(stem_highlights) if x not in (exact_highlights or [])]
-            if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value):
-                other_highlights = (exact_highlights or []) + (stem_highlights or [])
+            if stem_highlights := highlight_raw.get(NameField.NAME_Q_STEM_HIGHLIGHT.value, []):
+                stem_highlights = [x for x in split_highlights(stem_highlights) if x not in (exact_highlights)]
+            if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value, []):
+                other_highlights = exact_highlights + stem_highlights
                 synonym_highlights = [x.upper() for x in synonym_highlights if x.upper() not in other_highlights]
             docs.append({
                 **result,
                 "name": result["name"].upper(),
                 "highlighting": {
-                    "exact": list(set(exact_highlights or [])),
-                    "stems": list(set(stem_highlights or [])),
-                    "synonyms": list(set(synonym_highlights or []))
+                    "exact": list(set(exact_highlights)),
+                    "stems": list(set(stem_highlights)),
+                    "synonyms": list(set(synonym_highlights))
                 }
             })
         # save search in the db

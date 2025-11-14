@@ -652,6 +652,7 @@
       <filter name="lowercase"/>
       <filter name="asciiFolding"/>
       <filter name="classic"/>
+      <filter name="englishPossessive"/>
       <filter name="englishMinimalStem"/>
     </analyzer>
     <analyzer type="query">
@@ -679,6 +680,7 @@
       <filter name="lowercase"/>
       <filter name="asciiFolding"/>
       <filter name="classic"/>
+      <filter name="englishPossessive"/>
       <filter name="porterStem"/>
     </analyzer>
   </fieldType>
@@ -733,7 +735,8 @@
   <field name="name_q" type="text_stemmed" indexed="true" stored="false"/>
   <field name="name_q_exact" type="single_word_edgeNgram" indexed="true" stored="false"/>
   <field name="name_q_single_term" type="multi_word_ngram" indexed="true" stored="true"/>
-  <field name="name_q_stem_agro" type="text_stemmed_agro" indexed="true" stored="true"/>
+  <field name="name_q_stem_agro" type="text_stemmed_agro" indexed="true" stored="false"/>
+  <field name="name_q_stem_highlight" type="text_stemmed_agro" indexed="true" stored="true"/>
   <field name="name_q_synonym" type="synonym" indexed="true" stored="true"/>
   <field name="name_q_xtra" type="text_extra" indexed="true" stored="false"/>
   <field name="name_state" type="string" docValues="true" indexed="true" stored="true"/>
@@ -752,6 +755,7 @@
   <copyField source="name" dest="name_q"/>
   <copyField source="name" dest="name_q_single_term"/>
   <copyField source="name" dest="name_q_stem_agro"/>
+  <copyField source="name" dest="name_q_stem_highlight"/>
   <copyField source="name" dest="name_q_synonym"/>
   <copyField source="name" dest="name_q_xtra"/>
 </schema>
