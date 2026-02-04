@@ -39,8 +39,8 @@ from http import HTTPStatus
 
 import requests
 from flask import current_app
-from namex_solr_api.exceptions import SolrException
 
+from namex_solr_api.exceptions import SolrException
 from namex_solr_importer import auth
 
 
@@ -53,10 +53,14 @@ def _call_reindex_endpoint(endpoint: str, timeout: int = 1800) -> bool:
     current_app.logger.debug(f"Calling reindex endpoint: '{endpoint}' ...")
     try:
         resp = requests.post(url, headers=headers, timeout=timeout)
-        if resp.status_code not in (HTTPStatus.OK, HTTPStatus.CREATED, HTTPStatus.ACCEPTED):
+        if resp.status_code not in (
+            HTTPStatus.OK,
+            HTTPStatus.CREATED,
+            HTTPStatus.ACCEPTED,
+        ):
             raise SolrException(
                 f"Reindex endpoint '{endpoint}' failed.",
-                resp.json() if resp.headers.get("Content-Type") == "application/json" else resp.text,
+                (resp.json() if resp.headers.get("Content-Type") == "application/json" else resp.text),
                 resp.status_code,
             )
         current_app.logger.debug(f"Reindex endpoint '{endpoint}' completed successfully.")

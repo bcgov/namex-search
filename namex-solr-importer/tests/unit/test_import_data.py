@@ -33,7 +33,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """Test Suite to ensure reindexing works as expected."""
 
-def test_data_import_handler(app):
+
+def test_data_import_handler():
     """Secure the data import functionality."""
     # TODO: mock data / solr etc. and run
     assert True

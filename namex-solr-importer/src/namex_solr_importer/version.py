@@ -41,4 +41,4 @@ Post-release segment: .postN
 Development release segment: .devN
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

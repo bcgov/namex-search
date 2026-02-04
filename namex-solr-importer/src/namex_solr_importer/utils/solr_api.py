@@ -32,22 +32,24 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Manages util methods for updating possible conflict records via the namex solr api."""
+
 import time
 from http import HTTPStatus
 
 import requests
 from flask import current_app
-from namex_solr_api.exceptions import SolrException
 
+from namex_solr_api.exceptions import SolrException
 from namex_solr_importer import auth
 
 
 def _get_wait_interval(err: Exception):
     """Return the base wait interval for the exception."""
-    if (isinstance(err.args, tuple | list) and
-        err.args and
-        isinstance(err.args[0], dict) and
-        "408" in err.args[0].get("error", {}).get("detail", "")
+    if (
+        isinstance(err.args, tuple | list)
+        and err.args
+        and isinstance(err.args[0], dict)
+        and "408" in err.args[0].get("error", {}).get("detail", "")
     ):
         # increased base wait time for solr 408 error
         return 60
@@ -70,12 +72,16 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
         # call api import endpoint
         try:
             current_app.logger.debug("Importing batch...")
-            import_resp = requests.put(url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/import",
-                                       headers=headers,
-                                       json={"possibleConflicts": docs[offset:count],
-                                             "timeout": "60",
-                                             "type": "partial" if partial else "full"},
-                                       timeout=90)
+            import_resp = requests.put(
+                url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/import",
+                headers=headers,
+                json={
+                    "possibleConflicts": docs[offset:count],
+                    "timeout": "60",
+                    "type": "partial" if partial else "full",
+                },
+                timeout=90,
+            )
 
             if import_resp.status_code != HTTPStatus.CREATED:
                 if import_resp.status_code == HTTPStatus.UNAUTHORIZED:
@@ -85,17 +91,28 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
                     headers = {"Authorization": "Bearer " + token}
                     current_app.logger.debug("New Token set.")
                 # try again
-                raise Exception({"error": import_resp.json(), "status_code": import_resp.status_code})
+                raise Exception(  # pylint: disable=broad-exception-raised
+                    {
+                        "error": import_resp.json(),
+                        "status_code": import_resp.status_code,
+                    }
+                )  # pylint: disable=broad-exception-raised
             retry_count = 0
         except Exception as err:
             current_app.logger.debug(err)
             if retry_count < 5:  # noqa: PLR2004
                 # retry
-                current_app.logger.debug("Failed to update solr with batch. Trying again (%s of 5)...", retry_count + 1)
+                current_app.logger.debug(
+                    "Failed to update solr with batch. Trying again (%s of 5)...",
+                    retry_count + 1,
+                )
                 retry_count += 1
                 # await some time before trying again
                 base_wait_time = _get_wait_interval(err)
-                current_app.logger.debug("Awaiting %s seconds before trying again...", base_wait_time * retry_count)
+                current_app.logger.debug(
+                    "Awaiting %s seconds before trying again...",
+                    base_wait_time * retry_count,
+                )
                 time.sleep(base_wait_time * retry_count)
                 # set count back
                 count -= batch_amount
@@ -103,7 +120,8 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
             if retry_count == 5:  # noqa: PLR2004
                 # wait x minutes and then try one more time
                 current_app.logger.debug(
-                    "Max retries for batch exceeded. Awaiting 2 mins before trying one more time...")
+                    "Max retries for batch exceeded. Awaiting 2 mins before trying one more time..."
+                )
                 time.sleep(120)
                 # renew token for next try
                 current_app.logger.debug("Getting new token for Import...")
@@ -129,10 +147,12 @@ def resync():
     headers = {"Authorization": "Bearer " + token}
 
     current_app.logger.debug("Resyncing any overwritten docs during import...")
-    resync_resp = requests.post(url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/update/resync",
-                                headers=headers,
-                                json={"minutesOffset": current_app.config.get("RESYNC_OFFSET")},
-                                timeout=60)
+    resync_resp = requests.post(
+        url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/update/resync",
+        headers=headers,
+        json={"minutesOffset": current_app.config.get("RESYNC_OFFSET")},
+        timeout=60,
+    )
     if resync_resp.status_code != HTTPStatus.CREATED:
         if resync_resp.status_code == HTTPStatus.GATEWAY_TIMEOUT:
             current_app.logger.debug("Resync timed out -- check api for any individual failures.")
@@ -150,14 +170,20 @@ def update_synonyms(payload: dict):
     current_app.logger.debug("Token set.")
     current_app.logger.debug("Updating Synonyms...")
     try:
-        resp = requests.put(url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/update/synonyms?prune=true",
-                            headers=headers,
-                            json={"ALL": payload},
-                            timeout=1200)
+        resp = requests.put(
+            url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/update/synonyms?prune=true",
+            headers=headers,
+            json={"ALL": payload},
+            timeout=1200,
+        )
 
         if resp.status_code != HTTPStatus.OK:
-            raise Exception({"error": resp.json(), "status_code": resp.status_code})
+            raise Exception(  # pylint: disable=broad-exception-raised
+                {
+                    "error": resp.json(),
+                    "status_code": resp.status_code,
+                }
+            )
     except Exception as err:
         current_app.logger.debug(f"Error updating synonyms: {err.with_traceback(None)}")
         raise err
-        

@@ -32,18 +32,19 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Common setup and fixtures for the pytest suite used by this service."""
+
 import os
 
 import pytest
 
 from namex_solr_importer import create_app
 
-os.environ['DEPLOYMENT_ENV'] = 'testing'
+os.environ["DEPLOYMENT_ENV"] = "testing"
 
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope="session")
 def app():
     """Return a session-wide application configured in TEST mode."""
-    _app = create_app('testing')
+    _app = create_app("testing")
     with _app.app_context():
         yield _app

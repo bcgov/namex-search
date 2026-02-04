@@ -39,6 +39,7 @@ All modules and lookups get their configuration from the
 Flask config, rather than reading environment variables directly
 or by accessing this configuration directly.
 """
+
 import os
 
 from dotenv import find_dotenv, load_dotenv
@@ -86,7 +87,7 @@ class Config:
     ACCOUNT_SVC_CLIENT_SECRET = os.getenv("ACCOUNT_SVC_CLIENT_SECRET")
     try:
         ACCOUNT_SVC_TIMEOUT = int(os.getenv("ACCOUNT_SVC_TIMEOUT", "20"))
-    except:  # pylint: disable=bare-except;
+    except BaseException:  # pylint: disable=bare-except;  # pylint: disable=broad-exception-caught
         ACCOUNT_SVC_TIMEOUT = 20
 
     # ORACLE - CDEV/CTST/CPRD
@@ -106,8 +107,10 @@ class Config:
     DB_HOST = os.getenv("DATABASE_HOST", "")
     DB_PORT = os.getenv("DATABASE_PORT", "5432")
     DB_CONNECTION_NAME = os.getenv("DATABASE_CONNECTION_NAME")
-    GOOGLE_APPLICATION_CREDENTIALS_NAMEX = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_NAMEX", "sa-secret/namex/secret.json")
-    
+    GOOGLE_APPLICATION_CREDENTIALS_NAMEX = os.getenv(
+        "GOOGLE_APPLICATION_CREDENTIALS_NAMEX", "sa-secret/namex/secret.json"
+    )
+
     # Lear db
     LEAR_DB_USER = os.getenv("LEAR_DATABASE_USERNAME", "")
     LEAR_DB_PASSWORD = os.getenv("LEAR_DATABASE_PASSWORD", "")
@@ -128,7 +131,7 @@ class Config:
         "pool_size": int(DB_MIN_POOL_SIZE),
         "max_overflow": (int(DB_MAX_POOL_SIZE) - int(DB_MIN_POOL_SIZE)),
         "pool_recycle": int(DB_CONN_TIMEOUT),
-        "pool_timeout": int(DB_CONN_WAIT_TIMEOUT)
+        "pool_timeout": int(DB_CONN_WAIT_TIMEOUT),
     }
 
     # Cache stuff
@@ -181,7 +184,7 @@ class UnitTestingConfig(Config):
     DB_CONNECTION_NAME = os.getenv("DATABASE_TEST_CONNECTION_NAME")
     GOOGLE_APPLICATION_CREDENTIALS_NAMEX = "fake"
 
-     # Lear db
+    # Lear db
     LEAR_DB_USER = os.getenv("LEAR_TEST_DATABASE_USERNAME", "")
     LEAR_DB_PASSWORD = os.getenv("LEAR_TEST_DATABASE_PASSWORD", "")
     LEAR_DB_NAME = os.getenv("LEAR_TEST_DATABASE_NAME", "")

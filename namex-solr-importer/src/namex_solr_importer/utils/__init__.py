@@ -32,7 +32,13 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Manages util functions for the importer."""
-from .data_collection import collect_colin_data, collect_lear_data, collect_namex_data, collect_synonyms_data
+
+from .data_collection import (
+    collect_colin_data,
+    collect_lear_data,
+    collect_namex_data,
+    collect_synonyms_data,
+)
 from .data_parsing import parse_conflict, parse_synonyms
 from .reindex import reindex_post, reindex_prep, reindex_recovery
 from .solr_api import import_conflicts, resync, update_synonyms

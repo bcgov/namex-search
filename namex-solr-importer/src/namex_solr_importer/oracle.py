@@ -35,13 +35,14 @@
 
 These will get initialized by the application.
 """
+
 from __future__ import annotations
 
 import cx_Oracle
 from flask import Flask, current_app, g
 
 
-class OracleDB:
+class OracleDB:  # pylint: disable=duplicate-code
     """Oracle database connection object for re-use in application."""
 
     def __init__(self, app=None):
@@ -76,22 +77,29 @@ class OracleDB:
 
         :return: an instance of the OCI Session Pool
         """
-        def init_session(conn, *args):
+
+        def init_session(conn):
             cursor = conn.cursor()
             cursor.execute("alter session set TIME_ZONE = 'America/Vancouver'")
 
-        return cx_Oracle.SessionPool(user=current_app.config.get("ORACLE_USER"),
-                                     password=current_app.config.get("ORACLE_PASSWORD"),
-                                     dsn="{0}:{1}/{2}".format(current_app.config.get("ORACLE_HOST"),  # noqa: UP030
-                                                              current_app.config.get("ORACLE_PORT"),
-                                                              current_app.config.get("ORACLE_DB_NAME")),
-                                     min=1,
-                                     max=10,
-                                     increment=1,
-                                     getmode=cx_Oracle.SPOOL_ATTRVAL_NOWAIT,
-                                     wait_timeout=1500,
-                                     timeout=3600,
-                                     session_callback=init_session)
+        dsn_val = (
+            f"{current_app.config.get('ORACLE_HOST')}:"
+            f"{current_app.config.get('ORACLE_PORT')}/"
+            f"{current_app.config.get('ORACLE_DB_NAME')}"
+        )
+
+        return cx_Oracle.SessionPool(
+            user=current_app.config.get("ORACLE_USER"),
+            password=current_app.config.get("ORACLE_PASSWORD"),
+            dsn=dsn_val,
+            min=1,
+            max=10,
+            increment=1,
+            getmode=cx_Oracle.SPOOL_ATTRVAL_NOWAIT,
+            wait_timeout=1500,
+            timeout=3600,
+            session_callback=init_session,
+        )
 
     @property
     def connection(self):
@@ -103,9 +111,9 @@ class OracleDB:
         :return: cx_Oracle.connection type
         """
         if "_oracle_pool" not in g:
-            g._oracle_pool = self._create_pool()
+            g._oracle_pool = self._create_pool()  # pylint: disable=protected-access
 
-        return g._oracle_pool.acquire()
+        return g._oracle_pool.acquire()  # pylint: disable=protected-access
 
 
 # export instance of this class

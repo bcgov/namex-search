@@ -26,11 +26,34 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.11.9"
+flake8 = "^7.3.0"
 
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.3.5"
 pytest-cov = "^6.1.1"
+
+[tool.pylint.main]
+ignore-paths = [
+  "^\\.venv/",
+  "^build/",
+  "^dist/",
+  "^node_modules/",
+]
+
+[tool.pylint.format]
+disable = ["C0301"]
+
+[tool.pylint.design]
+disable = ["R0903"]
+max-attributes = 10
+max-statements = 60
+
+[tool.pylint.miscellaneous]
+disable = ["W0511"]
+
+[tool.pylint.typecheck]
+extension-pkg-allow-list = ["cx_Oracle"]
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -45,12 +68,36 @@ exclude = [
     "tests"
 ]
 
-# Same as Black.
-line-length = 120
-indent-width = 4
 
-# Assume Python 3.13
-target-version = "py313"
+[tool.black]
+line-length = 120
+target-version = ["py313"]
+
+exclude = '''
+/(
+    \.vscode
+  | dist
+  | htmlcov
+  | \.venv
+  | migrations
+  | devops
+  | \.history
+  | tests
+)/
+'''
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E501"]
+exclude = [
+    ".venv",
+    ".git",
+    "dist",
+    "build",
+    "htmlcov",
+    "migrations",
+    "tests",
+]
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
@@ -142,7 +189,13 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = [
-   "src/search_solr_importer",
+   "namex_solr_importer",
+]
+omit = [
+   "*/__init__.py",
+   "*/oracle.py",
+   "*/utils/*",
+   "*/services/*",
 ]
 
 [tool.coverage.report]

@@ -32,6 +32,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """The Search solr data import service."""
+
 import sys
 from dataclasses import asdict
 
@@ -66,7 +67,7 @@ def _load_synonyms():
     current_app.logger.debug("---------- Synonym update completed ----------.")
 
 
-def _load_conflicts(data_cur: CursorResult, data_name: str, type: str):
+def _load_conflicts(data_cur: CursorResult, data_name: str, conflict_type: str):
     """Update namex search with the given conflicts."""
     current_app.logger.debug("Fetching data...")
     data = data_cur.fetchall()
@@ -82,10 +83,10 @@ def _load_conflicts(data_cur: CursorResult, data_name: str, type: str):
     current_app.logger.debug("Parsing data...")
     for item in data:
         item_dict = dict(zip(namex_descs, item, strict=False))
-        if type == "CORP":
+        if conflict_type == "CORP":
             # corps can be added to possible_conflicts right away
-            possible_conflicts.append(asdict(parse_conflict(item_dict, type)))
-        elif type == "NR":
+            possible_conflicts.append(asdict(parse_conflict(item_dict, conflict_type)))
+        elif conflict_type == "NR":
             # each nr name will have its own record, so we have to put them together
             name_dict = {
                 "name": item_dict["name"],
@@ -105,7 +106,7 @@ def _load_conflicts(data_cur: CursorResult, data_name: str, type: str):
 
     for nr_conflict in nr_data.values():
         # parse all the nrs (the names will be grouped underneath them now)
-        possible_conflicts.append(asdict(parse_conflict(nr_conflict, type)))
+        possible_conflicts.append(asdict(parse_conflict(nr_conflict, conflict_type)))
 
     current_app.logger.debug("Importing data...")
     final_record = [possible_conflicts[-1]], data_name
@@ -187,17 +188,19 @@ def load_conflicts_core():  # noqa: PLR0915
         try:
             current_app.logger.debug("---------- Resync ----------")
             resync()
-        except Exception as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             current_app.logger.debug(error.with_traceback(None))
             current_app.logger.error("Resync failed.")
 
         try:
             current_app.logger.debug("---------- Final Commit ----------")
-            current_app.logger.debug("Triggering final commit on leader to make changes visible to searching on leader...")
+            current_app.logger.debug(
+                "Triggering final commit on leader to make changes visible to searching on leader..."
+            )
             import_conflicts(final_record[0], final_record[1])
             current_app.logger.debug("Final commit complete.")
 
-        except Exception as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             current_app.logger.debug(error.with_traceback(None))
             current_app.logger.error("Final commit failed. (This will only effect DEV).")
 

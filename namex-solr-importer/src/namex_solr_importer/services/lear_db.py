@@ -35,12 +35,13 @@
 
 These will get initialized by the application.
 """
+
 from flask import Flask
 
 from namex_solr_importer.services.base_db import BaseDB, DBConfig
 
 
-class LearDB:
+class LearDB:  # pylint: disable=duplicate-code
     """LEAR db connection."""
 
     def __init__(self, app: Flask | None = None):
@@ -59,7 +60,7 @@ class LearDB:
                 credentials_path=app.config["GOOGLE_APPLICATION_CREDENTIALS_LEAR"],
                 password=app.config["LEAR_DB_PASSWORD"],
                 host=app.config["LEAR_DB_HOST"],
-                port=app.config["LEAR_DB_PORT"]
+                port=app.config["LEAR_DB_PORT"],
             )
             self.db = BaseDB(db_config, test_connection)
 

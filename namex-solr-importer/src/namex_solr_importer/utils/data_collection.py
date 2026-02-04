@@ -32,6 +32,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Data collection functions."""
+
 from flask import current_app
 from sqlalchemy import CursorResult, text
 
@@ -92,8 +93,7 @@ def collect_lear_data() -> CursorResult:
         WHERE legal_type in ({_get_stringified_list_for_sql('CONFLICT_LEGAL_TYPES')})
             and legal_type in ({_get_stringified_list_for_sql('MODERNIZED_LEGAL_TYPES')})
             and state in ('ACTIVE')
-        """
-    ))
+        """))
 
 
 def collect_namex_data() -> CursorResult:
@@ -113,8 +113,7 @@ def collect_namex_data() -> CursorResult:
             END as name_state
         FROM requests r
             JOIN names n on n.nr_id = r.id
-        """
-    ))
+        """))
 
 
 def collect_synonyms_data() -> CursorResult:
@@ -127,5 +126,4 @@ def collect_synonyms_data() -> CursorResult:
         SELECT synonyms_text
         FROM synonym
         WHERE enabled='t'
-        """
-    ))
+        """))

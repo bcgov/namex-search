@@ -32,6 +32,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """Base db connection class."""
+
 import os
 from dataclasses import dataclass
 
@@ -79,7 +80,7 @@ class BaseDB:
                 pool_recycle=1800,
                 connect_args={"use_native_uuid": False},
             )
-        
+
         if test_connection:
             self._test_connection()
 
@@ -101,7 +102,7 @@ class BaseDB:
             result = conn.execute(text("SELECT version()")).fetchone()
             print(f"Connection successful. Database version: {result[0]}")  # noqa: T201
 
-    def teardown(self, exception=None):
+    def teardown(self):
         """Clean up resources."""
         if self.connector:
             self.connector.close()
