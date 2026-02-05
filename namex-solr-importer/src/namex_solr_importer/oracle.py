@@ -78,7 +78,7 @@ class OracleDB:  # pylint: disable=duplicate-code
         :return: an instance of the OCI Session Pool
         """
 
-        def init_session(conn):
+        def init_session(conn, *args):
             cursor = conn.cursor()
             cursor.execute("alter session set TIME_ZONE = 'America/Vancouver'")
 
