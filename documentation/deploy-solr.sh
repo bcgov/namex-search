@@ -218,6 +218,3 @@ case "${1:-}" in
         exit 1
         ;;
 esac
-
-
-#TODO - how to handle updating base image

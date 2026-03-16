@@ -37,7 +37,7 @@ Make sure to populate desired variable values correctly, e.g. ENV, LABEL, etc.
 
 ```
 chmod +x gcp-solr-infra.sh
-./documentation/gcp-solr-infra.sh.sh
+./documentation/gcp-solr-infra.sh
 ```
 it is important to run this from 1 level higher as the script references location of startup.txt
 
