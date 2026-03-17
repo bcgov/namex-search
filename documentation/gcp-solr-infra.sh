@@ -120,7 +120,30 @@ echo "  Leader ILB IP:   $LB_LEADER_IP"
 ###  SOLR INSTANCE GROUPS
 ### ============================================================
 
+# Helper: back up an existing instance group to <name>-old, then delete the original
+backup_instance_group() {
+  local GRP_NAME="$1"
+  if gcloud compute instance-groups unmanaged describe "$GRP_NAME" \
+       --zone="$ZONE" --project="$PROJECT_ID" &>/dev/null; then
+    echo "  ⚠ Instance group '$GRP_NAME' already exists — backing up to '${GRP_NAME}-old'..."
+    gcloud compute instance-groups unmanaged create "${GRP_NAME}-old" \
+      --project="$PROJECT_ID" --zone="$ZONE" 2>/dev/null || true
+    OLD_INSTANCES=$(gcloud compute instance-groups unmanaged list-instances "$GRP_NAME" \
+      --zone="$ZONE" --project="$PROJECT_ID" --format="value(instance)" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+    if [[ -n "$OLD_INSTANCES" ]]; then
+      gcloud compute instance-groups unmanaged add-instances "${GRP_NAME}-old" \
+        --zone="$ZONE" --instances="$OLD_INSTANCES" --project="$PROJECT_ID"
+      gcloud compute instance-groups unmanaged remove-instances "$GRP_NAME" \
+        --zone="$ZONE" --instances="$OLD_INSTANCES" --project="$PROJECT_ID"
+    fi
+    gcloud compute instance-groups unmanaged delete "$GRP_NAME" \
+      --project="$PROJECT_ID" --zone="$ZONE" --quiet
+  fi
+}
+
 echo "➤ Creating instance groups..."
+
+backup_instance_group "$LEADER_GRP_NAME"
 
 gcloud compute instance-groups unmanaged create "$LEADER_GRP_NAME" \
   --project="$PROJECT_ID" --zone="$ZONE"
@@ -130,6 +153,8 @@ gcloud compute instance-groups unmanaged set-named-ports "$LEADER_GRP_NAME" \
   --named-ports=http:8983
 
 if [[ "$ENV" != "dev" ]]; then
+  backup_instance_group "$FOLLOWER_GRP_NAME"
+
   gcloud compute instance-groups unmanaged create "$FOLLOWER_GRP_NAME" \
     --project="$PROJECT_ID" --zone="$ZONE"
 
@@ -151,7 +176,7 @@ gcloud compute health-checks create tcp "$HEALTH_CHECK_NAME" \
   --check-interval=5s \
   --timeout=5s \
   --unhealthy-threshold=2 \
-  --healthy-threshold=2
+  --healthy-threshold=2 || true
 
 ### ============================================================
 ###  FIREWALL RULES
@@ -167,7 +192,7 @@ gcloud compute firewall-rules create allow-${APP}-solr-ilb-hc \
   --source-ranges=35.191.0.0/16,130.211.0.0/22 \
   --network="$VPC_NETWORK" \
   --target-tags="$TAGS" \
-  --project="$VPC_HOST_PROJECT_ID"
+  --project="$VPC_HOST_PROJECT_ID" || true
 
 LB_SUBNET_CIDR=$(gcloud compute networks subnets describe "$VPC_SUBNET" \
   --region="$REGION" \
@@ -182,16 +207,32 @@ gcloud compute firewall-rules create allow-${APP}-solr-ilb \
   --source-ranges="$LB_SUBNET_CIDR" \
   --network="$VPC_NETWORK" \
   --target-tags="$TAGS" \
-  --project="$VPC_HOST_PROJECT_ID"
+  --project="$VPC_HOST_PROJECT_ID" || true
 
 ### ============================================================
 ###  SOLR INSTANCE TEMPLATES (with metadata including ZONE)
 ### ============================================================
 
 DEVICE_NAME="${APP}-solr-disk-$ENV"
-PATH_TO_STARTUP_SCRIPT="${APP}-solr/startupscript.txt"
+PATH_TO_STARTUP_SCRIPT="../${APP}-solr/startupscript.txt"
+
+# Helper: back up an existing instance template to <name>-old, then delete the original
+backup_instance_template() {
+  local TMPL_NAME="$1"
+  if gcloud compute instance-templates describe "$TMPL_NAME" \
+       --project="$PROJECT_ID" &>/dev/null; then
+    echo "  ⚠ Instance template '$TMPL_NAME' already exists — backing up to '${TMPL_NAME}-old'..."
+    gcloud compute instance-templates create "${TMPL_NAME}-old" \
+      --source-instance-template="$TMPL_NAME" \
+      --project="$PROJECT_ID" 2>/dev/null || true
+    gcloud compute instance-templates delete "$TMPL_NAME" \
+      --project="$PROJECT_ID" --quiet
+  fi
+}
 
 echo "➤ Creating SOLR instance templates..."
+
+backup_instance_template "$INSTANCE_TEMPLATE_LEADER"
 
 gcloud compute instance-templates create "$INSTANCE_TEMPLATE_LEADER" \
   --project="$PROJECT_ID" \
@@ -210,6 +251,8 @@ gcloud compute instance-templates create "$INSTANCE_TEMPLATE_LEADER" \
   --shielded-integrity-monitoring
 
 if [[ "$ENV" != "dev" ]]; then
+  backup_instance_template "$INSTANCE_TEMPLATE_FOLLOWER"
+
   gcloud compute instance-templates create "$INSTANCE_TEMPLATE_FOLLOWER" \
     --project="$PROJECT_ID" \
     --machine-type="$MACHINE_TYPE_FOLLOWER" \
@@ -239,7 +282,13 @@ gcloud compute backend-services create ${APP}-solr-leader-backend \
   --health-checks-region="$REGION" \
   --region="$REGION" \
   --load-balancing-scheme=INTERNAL \
-  --project="$PROJECT_ID"
+  --project="$PROJECT_ID" || true
+
+gcloud compute backend-services add-backend ${APP}-solr-leader-backend \
+  --instance-group="$LEADER_GRP_NAME" \
+  --instance-group-zone="$ZONE" \
+  --region="$REGION" \
+  --project="$PROJECT_ID" || true
 
 if [[ "$ENV" != "dev" ]]; then
   gcloud compute backend-services create ${APP}-solr-follower-backend \
@@ -249,6 +298,12 @@ if [[ "$ENV" != "dev" ]]; then
     --region="$REGION" \
     --load-balancing-scheme=INTERNAL \
     --project="$PROJECT_ID"
+
+  gcloud compute backend-services add-backend ${APP}-solr-follower-backend \
+    --instance-group="$FOLLOWER_GRP_NAME" \
+    --instance-group-zone="$ZONE" \
+    --region="$REGION" \
+    --project="$PROJECT_ID" || true
 fi
 
 gcloud compute forwarding-rules create ${APP}-solr-tcp-ilb-rule \
@@ -260,7 +315,7 @@ gcloud compute forwarding-rules create ${APP}-solr-tcp-ilb-rule \
   --backend-service=${APP}-solr-leader-backend \
   --backend-service-region="$REGION" \
   --region="$REGION" \
-  --project="$PROJECT_ID"
+  --project="$PROJECT_ID" || true
 
 if [[ "$ENV" != "dev" ]]; then
   gcloud compute forwarding-rules create ${APP}-solr-follower-ilb-rule \
