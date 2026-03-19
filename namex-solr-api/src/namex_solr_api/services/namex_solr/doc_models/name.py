@@ -52,6 +52,7 @@ class NameField(BaseEnum):
     PARENT_START_DATE = "parent_start_date"
     PARENT_STATE = "parent_state"
     PARENT_TYPE = "parent_type"
+    PARENT_SUB_TYPE = "parent_sub_type"
     # query fields
     NAME_Q = "name_q"  # minimal stem
     NAME_Q_EXACT = "name_q_exact"  # edge ngram
@@ -80,4 +81,4 @@ class Name:
     parent_start_date: str | None = None
     parent_state: str | None = None
     parent_type: str | None = None
-    
+    parent_sub_type: str  = '-'
