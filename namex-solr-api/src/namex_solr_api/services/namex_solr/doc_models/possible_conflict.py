@@ -57,6 +57,7 @@ class PCField(BaseEnum):
     # - Will add nr states: 'CONSUMED', 'EXPIRED', 'REJECTED', 'DRAFT'
     STATE = "state"
     TYPE = "type"  # NR or CORP
+    SUB_TYPE = "sub_type" # FR, BC, ULC, XPRO, ...
     # query fields
     CORP_NUM_Q = "corp_num_q"
     CORP_NUM_Q_EDGE = "corp_num_q_edge"
@@ -74,6 +75,7 @@ class PossibleConflict:
     names: list[Name]
     state: str  # APPROVED, CONDITION, CONSUMED, DRAFT, EXPIRED, REJECTED, ACT, LIQ
     type: str  # NR, CORP
+    sub_type: str  # FR, BC, ULC, XPRO, ...
     corp_num: str | None = None
     jurisdiction: str | None = None
     nr_num: str | None = None
@@ -90,6 +92,7 @@ class PossibleConflict:
                 name['parent_start_date'] = self.start_date
                 name['parent_state'] = self.state
                 name['parent_type'] = self.type
+                name['parent_sub_type'] = self.sub_type
 
             elif isinstance(name, Name):
                 name.id = f'{self.id}-name-{index}'
@@ -98,3 +101,4 @@ class PossibleConflict:
                 name.parent_start_date = self.start_date
                 name.parent_state = self.state
                 name.parent_type = self.type
+                name.parent_sub_type = self.sub_type

@@ -122,7 +122,9 @@ def possible_conflict_names():
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
-            full_query_boosts=solr.get_name_search_full_query_boost(value)
+            full_query_boosts=solr.get_name_search_full_query_boost(value),
+            # TODO: add this as LD flag ? names ticket: #32885
+            exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
         )
 
         results = namex_search(params, solr, True)
@@ -262,7 +264,8 @@ def nrs():
                 NameField.NAME_Q_SYN: "child"
             },
             # NOTE: add items to this to improve ordering as needed
-            full_query_boosts=[]
+            full_query_boosts=[],
+            exclude_sub_types=[]
         )
 
         results = namex_search(params, solr, False)

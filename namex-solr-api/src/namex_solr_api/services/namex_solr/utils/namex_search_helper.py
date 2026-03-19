@@ -84,6 +84,13 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
     # child filter queries
     if child_query := solr.query_builder.build_child_query(params.child_query, is_name_search):
         solr_payload["filter"].append(child_query)
+
+    # exclude firms
+    if len(params.exclude_sub_types) > 0:
+        exclude_sub_types = f"({') OR ('.join(params.exclude_sub_types)})"
+        solr_payload["filter"].append(f"-sub_type:({exclude_sub_types})")
+        solr_payload["filter"].append(f"-parent_sub_type:({exclude_sub_types})")
+
     # child doc faceted filter queries
     add_category_filters(solr_payload=solr_payload,
                          categories=params.child_categories,
@@ -117,6 +124,7 @@ def namex_search_highlighting(params: QueryParams):
             "hl.fl": ",".join([x.value for x in params.highlighted_fields])
         }
     }
+
 
 def namex_search_parse_highlighting(highlighted_value: str) -> list[str]:
     """Return the parsed list of highlighted terms."""

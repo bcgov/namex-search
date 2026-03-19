@@ -728,6 +728,7 @@
   <field name="start_date" type="datetime" indexed="true" stored="true"/>
   <field name="state" type="string" docValues="true" indexed="true" stored="true"/>
   <field name="type" type="string" docValues="true" indexed="true" stored="true"/>
+  <field name="sub_type" type="string" docValues="true" indexed="true" stored="true"/>
   <field name="names" type="string" indexed="true" stored="true" multiValued="true"/>
   <!-- Name docs (under 'names') -->
   <field name="choice" type="pint" indexed="false" stored="true"/>
@@ -746,6 +747,7 @@
   <field name="parent_start_date" type="string" indexed="false" stored="true"/>
   <field name="parent_state" type="string" indexed="false" stored="true"/>
   <field name="parent_type" type="string" indexed="false" stored="true"/>
+  <field name="parent_sub_type" type="string" indexed="false" stored="true"/>
   <!-- NameX copy fields -->
   <copyField source="corp_num" dest="corp_num_q"/>
   <copyField source="corp_num" dest="corp_num_q_edge"/>

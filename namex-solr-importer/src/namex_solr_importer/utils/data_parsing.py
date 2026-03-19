@@ -66,6 +66,7 @@ def parse_conflict(data: dict, conflict_type: str) -> PossibleConflict:
         names=_parse_names(data, conflict_type),
         state=data["state"],
         type=conflict_type,
+        sub_type=data.get("sub_type"),
         corp_num=data.get("corp_num"),
         jurisdiction=data.get("jurisdiction") or "BC",
         nr_num=data.get("nr_num"),
