@@ -76,7 +76,8 @@ LEADER_IMAGE="name-request-solr-${LEADER_ROLE}"
 IMAGE_PROJECT="${VPC_HOST_PROJECT}-tools"
 IMAGE_REPO="vm-repo"
 
-HEALTH_CHECK_NAME="${APP}-solr-health-check-$ENV"
+LEADER_HC_NAME="${APP}-solr-leader-hc-$ENV"
+FOLLOWER_HC_NAME="${APP}-solr-follower-hc-$ENV"
 
 SERVICE_ACCOUNT=$(gcloud iam service-accounts list \
   --format="value(email)" \
@@ -169,14 +170,29 @@ fi
 
 echo "➤ Creating health check..."
 
-gcloud compute health-checks create tcp "$HEALTH_CHECK_NAME" \
+gcloud compute health-checks create http "$LEADER_HC_NAME" \
   --region="$REGION" \
   --project="$PROJECT_ID" \
   --port=8983 \
-  --check-interval=5s \
+  --request-path="/solr/name_request/admin/ping" \
+  --check-interval=10s \
   --timeout=5s \
-  --unhealthy-threshold=2 \
+  --enable-logging \
+  --unhealthy-threshold=3 \
   --healthy-threshold=2 || true
+
+if [[ "$ENV" != "dev" ]]; then
+  gcloud compute health-checks create http "$FOLLOWER_HC_NAME" \
+    --region="$REGION" \
+    --project="$PROJECT_ID" \
+    --port=8983 \
+    --request-path="/solr/name_request_follower/admin/ping" \
+    --check-interval=10s \
+    --timeout=5s \
+    --enable-logging \
+    --unhealthy-threshold=3 \
+    --healthy-threshold=2 || true
+fi
 
 ### ============================================================
 ###  FIREWALL RULES
@@ -278,7 +294,7 @@ echo "➤ Creating backend services and ILB forwarding rules..."
 
 gcloud compute backend-services create ${APP}-solr-leader-backend \
   --protocol=TCP \
-  --health-checks="$HEALTH_CHECK_NAME" \
+  --health-checks="$LEADER_HC_NAME" \
   --health-checks-region="$REGION" \
   --region="$REGION" \
   --load-balancing-scheme=INTERNAL \
@@ -293,7 +309,7 @@ gcloud compute backend-services add-backend ${APP}-solr-leader-backend \
 if [[ "$ENV" != "dev" ]]; then
   gcloud compute backend-services create ${APP}-solr-follower-backend \
     --protocol=TCP \
-    --health-checks="$HEALTH_CHECK_NAME" \
+    --health-checks="$FOLLOWER_HC_NAME" \
     --health-checks-region="$REGION" \
     --region="$REGION" \
     --load-balancing-scheme=INTERNAL \
