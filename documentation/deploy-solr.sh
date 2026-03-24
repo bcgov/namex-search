@@ -5,10 +5,10 @@ set -euo pipefail
 # CONFIGURATION
 ########################################
 
-ENV="test"   # dev / test / prod
+ENV="dev"   # dev / test / prod
 SOURCE_TAG="dev"
 
-PROJECT="<YOUR_PROJECT>"
+PROJECT="a083gt"
 PROJECT_ID="${PROJECT}-${ENV}"
 ARTIFACT_REGISTRY_PROJECT="c4hnrd-tools"
 
@@ -17,10 +17,10 @@ REGION="northamerica-northeast1"
 REPO_PATH="${REGION}-docker.pkg.dev/${ARTIFACT_REGISTRY_PROJECT}/vm-repo"
 
 # Template version must match what update-solr-base-image.sh created
-TEMPLATE_VERSION="v1"
+TEMPLATE_VERSION=""
 
-LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}-${TEMPLATE_VERSION}"
-FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}-${TEMPLATE_VERSION}"
+LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
+FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
 
 
 ########################################
@@ -93,10 +93,10 @@ deploy_instances() {
 
     log "Determining old leader & follower VMs…"
     OLD_LEADER_VM=$(gcloud compute instances list --format="value(name)" \
-        --filter "name:namex-solr-leader-${ENV}" --project="${PROJECT_ID}" || true)
+        --filter "name~namex-solr-leader-" --project="${PROJECT_ID}" || true)
 
     OLD_FOLLOWER_VM=$(gcloud compute instances list --format="value(name)" \
-        --filter "name:namex-solr-follower-${ENV}" --project="${PROJECT_ID}" || true)
+        --filter "name~namex-solr-follower-" --project="${PROJECT_ID}" || true)
 
     log "OLD_LEADER_VM=${OLD_LEADER_VM}"
     log "OLD_FOLLOWER_VM=${OLD_FOLLOWER_VM}"
