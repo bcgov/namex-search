@@ -62,6 +62,7 @@ class NamexSolr(Solr):
             PCField.START_DATE.value,
             PCField.STATE.value,
             PCField.TYPE.value,
+            PCField.SUB_TYPE.value,
             PCField.NAMES.value,
             "[child]",
             NameField.CHOICE.value,
@@ -79,6 +80,7 @@ class NamexSolr(Solr):
             NameField.PARENT_START_DATE.value,
             NameField.PARENT_STATE.value,
             NameField.PARENT_TYPE.value,
+            NameField.PARENT_SUB_TYPE.value,
             NameField.UNIQUE_KEY.value,
         ]
 
