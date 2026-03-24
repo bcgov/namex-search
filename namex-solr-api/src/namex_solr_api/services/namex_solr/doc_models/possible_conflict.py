@@ -75,7 +75,7 @@ class PossibleConflict:
     names: list[Name]
     state: str  # APPROVED, CONDITION, CONSUMED, DRAFT, EXPIRED, REJECTED, ACT, LIQ
     type: str  # NR, CORP
-    sub_type: str  # FR, BC, ULC, XPRO, ...
+    sub_type: str | None = None  # FR, BC, ULC, XPRO, ...
     corp_num: str | None = None
     jurisdiction: str | None = None
     nr_num: str | None = None
