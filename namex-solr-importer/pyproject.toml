@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13,<4"
 dependencies = [
     "flask (>=3.1.1,<4.0.0)",
-    "cx-oracle (>=8.3.0,<9.0.0)",
+    "oracledb (>=2.0.0,<3.0.0)",
     "psycopg2-binary (>=2.9.10,<3.0.0)",
     "python-dotenv (>=1.1.0,<2.0.0)",
     "namex-solr-api @ git+https://github.com/bcgov/namex-search.git@main#subdirectory=namex-solr-api",
@@ -53,7 +53,7 @@ max-statements = 60
 disable = ["W0511"]
 
 [tool.pylint.typecheck]
-extension-pkg-allow-list = ["cx_Oracle"]
+extension-pkg-allow-list = ["oracledb"]
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.

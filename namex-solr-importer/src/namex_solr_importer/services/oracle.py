@@ -18,7 +18,7 @@ These will get initialized by the application.
 
 from __future__ import annotations
 
-import cx_Oracle
+import oracledb
 from flask import Flask, current_app, g
 
 
@@ -48,12 +48,12 @@ class OracleDB:  # pylint: disable=duplicate-code
         if pool is not None:
             try:
                 pool.close()
-            except cx_Oracle.DatabaseError as err:
+            except oracledb.DatabaseError as err:
                 current_app.logger.debug(err)
 
     @staticmethod
     def _create_pool():
-        """Create the cx_oracle connection pool from the Flask Config Environment.
+        """Create the oracledb connection pool from the Flask Config Environment.
 
         :return: an instance of the OCI Session Pool
         """
@@ -68,14 +68,14 @@ class OracleDB:  # pylint: disable=duplicate-code
             f"{current_app.config.get('ORACLE_DB_NAME')}"
         )
 
-        return cx_Oracle.SessionPool(
+        return oracledb.SessionPool(
             user=current_app.config.get("ORACLE_USER"),
             password=current_app.config.get("ORACLE_PASSWORD"),
             dsn=dsn_val,
             min=1,
             max=10,
             increment=1,
-            getmode=cx_Oracle.SPOOL_ATTRVAL_NOWAIT,
+            getmode=oracledb.SPOOL_ATTRVAL_NOWAIT,
             wait_timeout=1500,
             timeout=3600,
             session_callback=init_session,
@@ -88,7 +88,7 @@ class OracleDB:  # pylint: disable=duplicate-code
         If this is running in a Flask context,
         then either get the existing connection pool or create a new one
         and then return an acquired session
-        :return: cx_Oracle.connection type
+        :return: oracledb.connection type
         """
         if "_oracle_pool" not in g:
             g._oracle_pool = self._create_pool()  # pylint: disable=protected-access
