@@ -21,6 +21,8 @@ from __future__ import annotations
 import oracledb
 from flask import Flask, current_app, g
 
+oracledb.init_oracle_client()
+
 
 class OracleDB:  # pylint: disable=duplicate-code
     """Oracle database connection object for re-use in application."""
