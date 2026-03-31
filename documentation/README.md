@@ -19,13 +19,19 @@ This repository contains Bash scripts to automate the deployment and management 
 
 ## Prerequisites
 
-Before running the script, ensure the following:
+Before running the scripts, ensure the following:
 
-- Google Cloud SDK installed and authenticated.
-- `gcloud` command-line tool is configured for your project.
+- **Google Cloud SDK** installed and authenticated (`gcloud auth login`).
+- **`oc` CLI** installed and authenticated (`oc login`) — required for importer job management.
+- **Docker** installed — required for building images.
+- **`make`** installed — required for building Solr images.
+- `gcloud` is configured for your project.
 - Proper IAM roles are assigned to your service accounts.
 - Artifact Registry and required images exist.
 - Startup script file exists at the specified path: `namex-solr/startupscript.txt`.
+- **IAP tunneling** access is configured — VMs have no external IPs; the script uses `gcloud compute ssh --tunnel-through-iap` for health checks and replication configuration.
+
+> The `deploy` command verifies both `gcloud` and `oc` authentication before proceeding.
 
 ---
 
@@ -49,87 +55,79 @@ it is important to run this from 1 level higher as the script references locatio
 
 ## Leader/Follower SOLR Replication
 
-After VM creation, SOLR replication needs manual configuration:
+Replication is **configured automatically** by `deploy-solr.sh deploy` for test/prod environments. The script:
 
-1. SSH into a follower VM.
-2. Set the leader URL using curl:
+1. Creates the follower VM and waits for the Solr core to be ready.
+2. SSHs into the follower via IAP tunnel and sets `solr.leaderUrl` pointing to the new leader's internal IP.
 
-```
-curl -X POST -H 'Content-type: application/json' \
-  -d '{"set-user-property":{"solr.leaderUrl":"http://<LEADER_INTERNAL_IP>:8983/solr/name_request"}}' \
-  http://<FOLLOWER_INTERNAL_IP>:8983/solr/name_request_follower/config/requestHandler?componentName=/replication
-```
-You can verify that it succeeded via
+No manual steps are required.
 
+To **verify** replication after deploy, SSH into the follower and run:
+
+```bash
+gcloud compute ssh <FOLLOWER_VM> --zone=<ZONE> --project=<PROJECT_ID> --tunnel-through-iap \
+  --command="curl -s 'http://localhost:8983/solr/name_request_follower/config/requestHandler?componentName=/replication'"
 ```
-curl "http://<FOLLOWER_INTERNAL_IP>:8983/solr/name_request_follower/config/requestHandler?componentName=/replication"
-```
-You should see smth like:
-```
+
+You should see the leader URL in the response:
+```json
 {
-  "responseHeader":{
-    "status":0,
-    "QTime":0
+  "responseHeader": {
+    "status": 0,
+    "QTime": 29
   },
-  "config":{
-    "requestHandler":{
-      "/replication":{
-        "name":"/replication",
-        "class":"solr.ReplicationHandler",
-        "follower":{
-          "leaderUrl":"http://<LEADER_INTERNAL_IP>:8983/solr/name_request",
-          "pollInterval":"00:00:30",
-          "compression":"internal"
+  "config": {
+    "requestHandler": {
+      "/replication": {
+        "name": "/replication",
+        "class": "solr.ReplicationHandler",
+        "follower": {
+          "leaderUrl": "http://<LEADER_INTERNAL_IP>:8983/solr/name_request",
+          "pollInterval": "00:00:30",
+          "compression": "internal"
         }
       }
     }
   }
 }
 ```
-You can also verify data load has been loaded to the follower:
 
+To verify data has replicated to the follower:
+```bash
+gcloud compute ssh <FOLLOWER_VM> --zone=<ZONE> --project=<PROJECT_ID> --tunnel-through-iap \
+  --command="curl -s 'http://localhost:8983/solr/admin/cores?action=STATUS'"
 ```
-curl -v http://<FOLLOWER_INTERNAL_IP>:8983/solr/admin/cores?action=STATUS
 
-```
-You should see non-empty follower core:
-```
+You should see a non-empty follower core:
+```json
 {
-  "responseHeader":{
-    "status":0,
-    "QTime":133
+  "responseHeader": {
+    "status": 0,
+    "QTime": 133
   },
-  "initFailures":{ },
-  "status":{
-    "name_request_follower":{
-      "name":"name_request_follower",
-      "instanceDir":"/var/solr/data/name_request_follower",
-      "dataDir":"/var/solr/data/name_request_follower/data/",
-      "config":"solrconfig.xml",
-      "schema":"managed-schema.xml",
-      "startTime":"2025-12-11T18:53:38.144Z",
-      "uptime":8710669,
-      "index":{
-        "numDocs":8784132,
-        "maxDoc":8784134,
-        "deletedDocs":2,
-        "version":806,
-        "segmentCount":31,
-        "current":true,
-        "hasDeletions":true,
-        "directory":"org.apache.lucene.store.NRTCachingDirectory:NRTCachingDirectory(MMapDirectory@/var/solr/data/name_request_follower/data/index lockFactory=org.apache.lucene.store.NativeFSLockFactory@5732c8fc; maxCacheMB=48.0 maxMergeSizeMB=4.0)",
-        "segmentsFile":"segments_1j",
-        "segmentsFileSizeInBytes":2713,
-        "userData":{
-          "commitCommandVer":"1851235944050458624",
-          "commitTimeMSec":"1765476173449"
-        },
-        "lastModified":"2025-12-11T18:02:53.449Z",
-        "sizeInBytes":3830194266,
-        "size":"3.57 GB"
+  "initFailures": {},
+  "status": {
+    "name_request_follower": {
+      "name": "name_request_follower",
+      "instanceDir": "/var/solr/data/name_request_follower",
+      "dataDir": "/var/solr/data/name_request_follower/data/",
+      "config": "solrconfig.xml",
+      "schema": "managed-schema.xml",
+      "startTime": "2025-12-11T18:53:38.144Z",
+      "uptime": 8710669,
+      "index": {
+        "numDocs": 8784132,
+        "maxDoc": 8784134,
+        "deletedDocs": 2,
+        "segmentCount": 31,
+        "current": true,
+        "hasDeletions": true,
+        "sizeInBytes": 3830194266,
+        "size": "3.57 GB"
       }
     }
   }
+}
 ```
 
 ## Script 2: Base Image (COS) Updates
@@ -145,17 +143,35 @@ Creates new instance templates. Uses an updated COS base image. Versions templat
 
 ## Script 3: Application Deploy & VM Rotation
 
-Update relevant vars, e.g. ENV, SOURCE_TAG. Can run this script 3 ways:
+Update relevant vars at the top of the script: `ENV`, `SOURCE_TAG`, `TEMPLATE_VERSION`.
 
-```
+```bash
 chmod +x deploy-solr.sh
-./documentation/deploy-solr.sh build   # DEV only
-./documentation/deploy-solr.sh tag     # Promote images
-./documentation/deploy-solr.sh deploy  # Replace VMs
+./documentation/deploy-solr.sh build   # DEV only: build & push images
+./documentation/deploy-solr.sh tag     # Promote images from SOURCE_TAG → ENV
+./documentation/deploy-solr.sh deploy  # Blue-green VM rotation
 ```
 
-MANUAL STEP REQUIRED: Run importer on leader after new leader vm was created. This script pauses to enforce this requirement:
+### What `deploy` does
 
-```
-oc -n cbaab0-$ENV create job --from=cronjob/namex-solr-importer-$ENV namex-solr-importer-$ENV-manual-run
-```
+1. **Verifies prerequisites** — checks `gcloud`, `docker`, `make`, `oc` are installed and authenticated.
+2. **Creates a new leader VM** — tries each zone until one succeeds (zone failover).
+3. **Waits for Solr** — polls the leader core via SSH/IAP tunnel until it responds to ping.
+4. **Swaps leader backend** — adds new leader to instance group + backend service, waits for health check, then removes old leader from backend. Rolls back if the new leader fails health checks.
+5. **Runs the importer job** — sets `REINDEX_CORE=True` in the OpenShift secret, creates a job from the importer CronJob, and waits up to 90 minutes for completion. Resets the flag on exit (via trap).
+6. **(test/prod only) Creates a new follower VM** — same zone-failover approach.
+7. **Configures replication** — SSHs into follower via IAP tunnel and sets `solr.leaderUrl` to the new leader's internal IP.
+8. **Swaps follower backend** — same health-check-then-swap as leader.
+9. **Cleans up old VMs** — deletes old leader and follower VMs only after full success.
+
+### VM naming convention
+
+VMs are named `namex-solr-{leader|follower}-{ENV}-{timestamp}`, e.g. `namex-solr-leader-prod-2026-03-30--220000`.
+
+### Known limitations
+
+- **Old VM detection** uses `--limit=1` — if multiple orphan VMs exist from failed runs, only the newest is detected and cleaned up. Manually check for orphans with:
+  ```bash
+  gcloud compute instances list --project a083gt-$ENV --sort-by=name
+  ```
+- **Subnet IP exhaustion** — the `/28` subnet has only 14 usable IPs. Orphan VMs from failed runs consume IPs. Clean up orphans before redeploying if you hit IP exhaustion errors.
