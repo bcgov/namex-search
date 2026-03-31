@@ -269,7 +269,7 @@ deploy_instances() {
     NEW_LEADER_VM="namex-solr-leader-${ENV}-${timestamp}"
     NEW_FOLLOWER_VM="namex-solr-follower-${ENV}-${timestamp}"
 
-    # --- Issue 5: Safe old VM detection (sort + limit 1) ---
+    # Safe old VM detection
     log "Determining old leader & follower VMs…"
     OLD_LEADER_VM=$(gcloud compute instances list \
         --format="value(name)" \
@@ -319,10 +319,10 @@ deploy_instances() {
         --zone "${LEADER_ZONE}" --project "${PROJECT_ID}" \
         --format='value(networkInterfaces[0].networkIP)')
 
-    # --- Wait for Solr core to be ready before any operations ---
+    # Wait for Solr core to be ready before any operations
     wait_for_solr_ready "${NEW_LEADER_VM}" "${LEADER_ZONE}" "name_request"
 
-    # --- Zone-specific instance group names to avoid cross-zone collisions ---
+    # Zone-specific instance group names to avoid cross-zone collisions
     LEADER_ZONE_SUFFIX=$(basename "${LEADER_ZONE}" | grep -o '[a-c]$')
     NEW_LEADER_GRP="namex-solr-leader-grp-${ENV}-${LEADER_ZONE_SUFFIX}"
     OLD_LEADER_GRP=""
@@ -342,7 +342,7 @@ deploy_instances() {
     # Add new to backend (old still serves traffic during transition)
     add_to_backend "${LEADER_BACKEND}" "${NEW_LEADER_GRP}" "${LEADER_ZONE}"
 
-    # --- Wait for new leader to be healthy BEFORE removing old ---
+    # Wait for new leader to be healthy BEFORE removing old
     if ! wait_for_healthy_backend "${LEADER_BACKEND}" "${NEW_LEADER_VM}"; then
         rollback_backend "${LEADER_BACKEND}" "${NEW_LEADER_GRP}" "${LEADER_ZONE}"
         log "Cleaning up failed leader VM: ${NEW_LEADER_VM}"
@@ -362,14 +362,14 @@ deploy_instances() {
             --project="${PROJECT_ID}" 2>/dev/null || true
     fi
 
-    # --- Trap ensures REINDEX_CORE resets even on failure (idempotent) ---
+    # Trap ensures REINDEX_CORE resets even on failure (idempotent)
     trap reset_reindex_flag EXIT
 
     log "Enabling REINDEX_CORE in secret…"
     oc -n "${OC_NAMESPACE}" patch secret "${IMPORTER_SECRET}" \
         -p '{"stringData":{"REINDEX_CORE":"True"}}'
 
-    # --- OC job idempotency guard ---
+    # OC job idempotency guard
     JOB_NAME="namex-solr-importer-${ENV}-deploy-${timestamp}"
     oc -n "${OC_NAMESPACE}" delete job "${JOB_NAME}" --ignore-not-found=true
 
@@ -409,7 +409,7 @@ deploy_instances() {
     if [[ "${ENV}" == "dev" ]]; then
         log "DEV environment: follower instance not required. Skipping follower creation."
 
-        # --- Issue 9: Only delete old after everything succeeds ---
+        # Only delete old after everything succeeds
         if [[ -n "${OLD_LEADER_VM}" ]]; then
             log "Deleting OLD leader: ${OLD_LEADER_VM} (zone: ${OLD_LEADER_ZONE})"
             gcloud compute instances delete "${OLD_LEADER_VM}" --zone="${OLD_LEADER_ZONE}" --project="${PROJECT_ID}" --quiet
@@ -427,7 +427,7 @@ deploy_instances() {
     FOLLOWER_ZONE=$(create_vm_in_available_zone "${NEW_FOLLOWER_VM}" "${FOLLOWER_TEMPLATE}")
     log "Follower created in zone: ${FOLLOWER_ZONE}"
 
-    # --- Wait for follower Solr core before configuring replication ---
+    # Wait for follower Solr core before configuring replication
     wait_for_solr_ready "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "name_request_follower"
 
     log "Setting follower replication properties…"
@@ -445,7 +445,7 @@ deploy_instances() {
         -d '{\"set-user-property\":{\"solr.leaderUrl\": \"http://${NEW_LEADER_INTERNAL_IP}:8983/solr/name_request\"}}' \
         'http://localhost:8983/solr/name_request_follower/config/requestHandler'"
 
-    # --- Zone-specific follower instance group ---
+    # Zone-specific follower instance group
     FOLLOWER_ZONE_SUFFIX=$(basename "${FOLLOWER_ZONE}" | grep -o '[a-c]$')
     NEW_FOLLOWER_GRP="namex-solr-follower-grp-${ENV}-${FOLLOWER_ZONE_SUFFIX}"
     OLD_FOLLOWER_GRP=""
@@ -465,7 +465,7 @@ deploy_instances() {
     # Add new to backend (old still serves traffic during transition)
     add_to_backend "${FOLLOWER_BACKEND}" "${NEW_FOLLOWER_GRP}" "${FOLLOWER_ZONE}"
 
-    # --- Wait for new follower to be healthy BEFORE removing old ---
+    # Wait for new follower to be healthy BEFORE removing old
     if ! wait_for_healthy_backend "${FOLLOWER_BACKEND}" "${NEW_FOLLOWER_VM}"; then
         rollback_backend "${FOLLOWER_BACKEND}" "${NEW_FOLLOWER_GRP}" "${FOLLOWER_ZONE}"
         log "Cleaning up failed follower VM: ${NEW_FOLLOWER_VM}"
@@ -486,7 +486,7 @@ deploy_instances() {
     fi
 
     ########################################
-    # CLEANUP OLD INSTANCES (Issue 9: only after full success)
+    # CLEANUP OLD INSTANCES
     ########################################
 
     if [[ -n "${OLD_LEADER_VM}" ]]; then
