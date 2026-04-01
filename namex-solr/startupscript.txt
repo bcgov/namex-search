@@ -109,3 +109,43 @@ docker run -d \
   "$IMAGE_PATH:$ENV"
 
 echo "Solr container running."
+
+### ============================================================
+### START HEALTH CHECK SIDECAR
+### ============================================================
+
+HEALTHCHECK_CONTAINER_NAME="solr-healthcheck"
+
+echo "Starting health check sidecar..."
+
+docker stop $HEALTHCHECK_CONTAINER_NAME || true
+docker rm $HEALTHCHECK_CONTAINER_NAME || true
+
+docker run -d \
+  --name=$HEALTHCHECK_CONTAINER_NAME \
+  --log-driver=gcplogs \
+  --network=host \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --restart=unless-stopped \
+  "${REGION}-docker.pkg.dev/${IMAGE_PROJECT}/${IMAGE_REPO}/namex-solr-healthcheck:${ENV}"
+
+if [ $? -eq 0 ]; then
+  echo "✓ Health check sidecar started"
+else
+  echo "✗ Failed to start health check sidecar"
+  exit 1
+fi
+
+# Verify container is running
+echo "Verifying health check sidecar is running..."
+for i in {1..5}; do
+  if docker inspect -f '{{.State.Running}}' $HEALTHCHECK_CONTAINER_NAME | grep -q true; then
+    echo "✓ Health check sidecar is running"
+    break
+  fi
+  if [ $i -eq 5 ]; then
+    echo "✗ Health check sidecar failed to start"
+    exit 1
+  fi
+  sleep 1
+done
