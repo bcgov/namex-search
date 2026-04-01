@@ -130,16 +130,21 @@ You should see a non-empty follower core:
 }
 ```
 
-## Script 2: Base Image (COS) Updates
+## Script 2: Base Image (COS) & Startup Script Updates
 
-You will need to update BOOT_DISK_IMAGE variable first.
+Use this script whenever you need to update the **base OS image** or the **VM startup script** (`namex-solr/startupscript.txt`). The script clones the existing instance template, swaps in the latest COS image and injects a fresh copy of the startup script from the repo.
+
+Examples of changes that require a new template via this script:
+- OS / security updates (new COS image)
+- Adding or modifying sidecar containers (e.g. starting a a health-check sidecar via startup script)
+- Changing Docker run flags, mount paths, or container versions in the startup script
 
 ```
 chmod +x update-solr-base-image.sh
 ./documentation/update-solr-base-image.sh
 ```
 
-Creates new instance templates. Uses an updated COS base image. Versions templates (e.g. -v2, -v3). Does not touch running VMs
+Creates new instance templates. Versions templates (e.g. -v2, -v3). Does not touch running VMs — a redeploy (`deploy-solr.sh deploy`) is required for changes to take effect.
 
 ## Script 3: Application Deploy & VM Rotation
 
