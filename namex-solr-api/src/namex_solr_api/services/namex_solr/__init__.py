@@ -35,10 +35,10 @@
 from dataclasses import asdict
 
 from flask import Flask
-
 from namex_solr_api.models import SolrSynonymList
 from namex_solr_api.services.base_solr import Solr
-from namex_solr_api.services.base_solr.utils import QueryBuilder, prep_query_str
+from namex_solr_api.services.base_solr.utils import (QueryBuilder,
+                                                     prep_query_str)
 
 from .doc_models.name import Name, NameField
 from .doc_models.possible_conflict import PCField, PossibleConflict
@@ -89,10 +89,20 @@ class NamexSolr(Solr):
                                raw_docs: list[dict] | None = None,
                                timeout=25,
                                additive=True):
-        """Create or replace solr docs in the core."""
+        """Create or replace solr docs in the core.
+
+        When additive=False, this method will:
+        1. Delete all old child documents (e.g., NR6546542-name-0, NR6546542-name-1, etc.)
+        2. Insert new documents with updated data
+
+        This ensures no orphaned child documents remain after an update.
+        """
         update_list = raw_docs if raw_docs else [asdict(doc) for doc in docs]
 
         if not additive and not raw_docs:
+            # Delete old child documents before updating
+            self._delete_old_child_docs(update_list)
+
             for pc_dict in update_list:
                 # names
                 if names := pc_dict.get(PCField.NAMES.value, None):
@@ -100,6 +110,68 @@ class NamexSolr(Solr):
 
         url = self.update_url if len(update_list) < 1000 else self.bulk_update_url  # noqa: PLR2004
         return self.call_solr("POST", url, json_data=update_list, timeout=timeout)
+
+    def _delete_old_child_docs(self, parent_docs: list[dict]):
+        """Delete all old child documents before updating parent docs.
+
+        For each parent document (e.g., NR6546542), this queries Solr to find
+        all existing child documents (e.g., NR6546542-name-0, NR6546542-name-1, ...)
+        and deletes them to prevent orphaned records.
+
+        Args:
+            parent_docs: List of parent document dicts to update
+        """
+        from flask import current_app
+
+        child_doc_ids_to_delete = []
+
+        for parent_doc in parent_docs:
+            parent_id = parent_doc.get("id")
+            if not parent_id:
+                continue
+
+            try:
+                # Query Solr to find all child docs with this parent_id
+                # Child docs have IDs like: {parent_id}-name-0, {parent_id}-name-1, etc.
+                query_payload = {
+                    "q": f"{NameField.PARENT_ID.value}:{parent_id}",
+                    "fl": NameField.UNIQUE_KEY.value,
+                    "rows": 1000  # Reasonable limit for child docs
+                }
+
+                search_response = self.query(query_payload)
+                docs = search_response.get("response", {}).get("docs", [])
+
+                # Collect all child doc IDs for deletion
+                for doc in docs:
+                    if child_id := doc.get(NameField.UNIQUE_KEY.value):
+                        child_doc_ids_to_delete.append(child_id)
+                        current_app.logger.debug(
+                            f"Marked child doc for deletion: {child_id} (parent: {parent_id})"
+                        )
+
+            except Exception as err:
+                current_app.logger.warning(
+                    f"Failed to query child docs for parent {parent_id}: {err}"
+                )
+                # Continue processing other parents even if one fails
+                continue
+
+        # Delete all collected child doc IDs
+        if child_doc_ids_to_delete:
+            try:
+                current_app.logger.debug(
+                    f"Deleting {len(child_doc_ids_to_delete)} old child documents"
+                )
+                self.delete_docs(child_doc_ids_to_delete)
+                current_app.logger.info(
+                    f"Successfully deleted {len(child_doc_ids_to_delete)} old child documents"
+                )
+            except Exception as err:
+                current_app.logger.error(
+                    f"Failed to delete old child documents: {err}"
+                )
+                raise
 
     @staticmethod
     def get_name_search_full_query_boost(query_value: str):
