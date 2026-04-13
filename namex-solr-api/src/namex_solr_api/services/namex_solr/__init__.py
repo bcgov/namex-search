@@ -35,10 +35,10 @@
 from dataclasses import asdict
 
 from flask import Flask
+
 from namex_solr_api.models import SolrSynonymList
 from namex_solr_api.services.base_solr import Solr
-from namex_solr_api.services.base_solr.utils import (QueryBuilder,
-                                                     prep_query_str)
+from namex_solr_api.services.base_solr.utils import QueryBuilder, prep_query_str
 
 from .doc_models.name import Name, NameField
 from .doc_models.possible_conflict import PCField, PossibleConflict

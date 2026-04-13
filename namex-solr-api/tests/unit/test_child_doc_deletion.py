@@ -66,9 +66,9 @@ class TestChildDocumentDeletion:
                     )
                 ]
                 mock_call.return_value = MagicMock()
-                
+
                 solr_service.create_or_replace_docs(docs=docs, additive=True)
-                
+
                 # _delete_old_child_docs should NOT be called when additive=True
                 mock_delete.assert_not_called()
 
@@ -86,9 +86,9 @@ class TestChildDocumentDeletion:
                     )
                 ]
                 mock_call.return_value = MagicMock()
-                
+
                 solr_service.create_or_replace_docs(docs=docs, additive=False)
-                
+
                 # _delete_old_child_docs SHOULD be called when additive=False
                 mock_delete.assert_called_once()
 
@@ -107,13 +107,13 @@ class TestChildDocumentDeletion:
                         ]
                     }
                 }
-                
+
                 parent_docs = [{"id": "NR6546542"}]
                 solr_service._delete_old_child_docs(parent_docs)
-                
+
                 # Verify query was called to find child docs
                 mock_query.assert_called_once()
-                
+
                 # Verify delete_docs was called with correct child IDs
                 mock_delete.assert_called_once_with(
                     ["NR6546542-name-0", "NR6546542-name-1", "NR6546542-name-2"]
@@ -128,10 +128,10 @@ class TestChildDocumentDeletion:
                 
                 parent_docs = [{"id": "NR6546542"}]
                 solr_service._delete_old_child_docs(parent_docs)
-                
+
                 # Verify query was called
                 mock_query.assert_called_once()
-                
+
                 # Verify delete_docs was NOT called (no children to delete)
                 mock_delete.assert_not_called()
 
@@ -160,7 +160,7 @@ class TestChildDocumentDeletion:
                             }
                         }
                     return {"response": {"docs": []}}
-                
+
                 mock_query.side_effect = query_side_effect
                 
                 parent_docs = [{"id": "NR1"}, {"id": "NR2"}]
@@ -178,7 +178,6 @@ class TestChildDocumentDeletion:
 
     def test_scenario_update_reduces_names_count(self, solr_service):
         """Test the main bug scenario: updating NR with fewer names than before.
-        
         This tests the exact scenario from the bug report:
         - Old NR entry had 5 names (name-0 through name-4)
         - New NR entry has 3 names (name-0 through name-2)
@@ -216,7 +215,7 @@ class TestChildDocumentDeletion:
                             sub_type="NR"
                         )
                     ]
-                    
+
                     solr_service.create_or_replace_docs(docs=new_docs, additive=False)
                     
                     # Verify that ALL 5 old child docs are deleted
@@ -234,7 +233,7 @@ class TestChildDocumentDeletion:
         with patch.object(solr_service, 'query') as mock_query:
             with patch.object(solr_service, 'delete_docs'):
                 mock_query.return_value = {"response": {"docs": []}}
-                
+
                 parent_docs = [{"id": "CORP123"}]
                 solr_service._delete_old_child_docs(parent_docs)
                 
@@ -252,7 +251,7 @@ class TestChildDocumentDeletion:
                     Exception("Solr connection error"),
                     {"response": {"docs": [{"id": "NR2-name-0"}]}}
                 ]
-                
+
                 parent_docs = [{"id": "NR1"}, {"id": "NR2"}]
                 # Should not raise exception
                 solr_service._delete_old_child_docs(parent_docs)
@@ -271,12 +270,12 @@ class TestChildDocumentDeletion:
                     }
                 ]
                 mock_call.return_value = MagicMock()
-                
+
                 solr_service.create_or_replace_docs(
                     raw_docs=raw_docs,
                     additive=False
                 )
-                
+
                 # When raw_docs are provided, deletion should be skipped
                 # (assumption: raw_docs are already pre-processed)
                 mock_delete.assert_not_called()
