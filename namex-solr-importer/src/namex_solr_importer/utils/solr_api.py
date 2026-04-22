@@ -38,6 +38,7 @@ from http import HTTPStatus
 
 import requests
 from flask import current_app
+from requests.exceptions import ReadTimeout
 
 from namex_solr_api.exceptions import SolrException
 from namex_solr_importer import auth
@@ -45,15 +46,34 @@ from namex_solr_importer import auth
 
 def _get_wait_interval(err: Exception):
     """Return the base wait interval for the exception."""
+    if isinstance(err, ReadTimeout):
+        # client-side read timeout: server is still processing, wait longer before retry
+        return 60
     if (
         isinstance(err.args, tuple | list)
         and err.args
         and isinstance(err.args[0], dict)
-        and "408" in err.args[0].get("error", {}).get("detail", "")
     ):
-        # increased base wait time for solr 408 error
-        return 60
+        detail = err.args[0].get("error", {}).get("detail", "")
+        if "408" in detail or "504" in detail:
+            # solr timed out (408) or upstream gateway timed out (504): wait longer before retry
+            return 60
     return 20
+
+
+def _raise_read_timeout(err: ReadTimeout) -> None:
+    """Log and raise a SolrException for a client-side read timeout."""
+    timeout_val = current_app.config.get("SOLR_IMPORT_TIMEOUT", 600)
+    batch_size = current_app.config.get("BATCH_SIZE", 1000)
+    current_app.logger.error(
+        "Import timed out after %ss — server may still be processing the batch. "
+        "Aborting to avoid duplicate submissions. "
+        "Tune SOLR_IMPORT_TIMEOUT (currently %s) or SOLR_BATCH_UPDATE_SIZE (currently %s).",
+        timeout_val,
+        timeout_val,
+        batch_size,
+    )
+    raise SolrException("ReadTimeout waiting for SOLR import. Aborting import.") from err
 
 
 def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
@@ -80,7 +100,7 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
                     "timeout": "60",
                     "type": "partial" if partial else "full",
                 },
-                timeout=90,
+                timeout=current_app.config.get("SOLR_IMPORT_TIMEOUT", 600),
             )
 
             if import_resp.status_code != HTTPStatus.CREATED:
@@ -98,6 +118,8 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
                     }
                 )  # pylint: disable=broad-exception-raised
             retry_count = 0
+        except ReadTimeout as err:
+            _raise_read_timeout(err)
         except Exception as err:
             current_app.logger.debug(err)
             if retry_count < 5:  # noqa: PLR2004

@@ -52,6 +52,8 @@ serialPipeline:
       container-name: "namex-solr-api-dev"
       cloudsql-instances: "a083gt-dev:northamerica-northeast1:namex-db-dev"
       service-account: "sa-api@a083gt-dev.iam.gserviceaccount.com"
+      resources-cpu: "2000m"
+      resources-memory: "1Gi"
  - targetId: a083gt-test
    profiles: [test]
    strategy:
@@ -65,6 +67,8 @@ serialPipeline:
       container-name: "namex-solr-api-test"
       cloudsql-instances: "a083gt-test:northamerica-northeast1:namex-db-test"
       service-account: "sa-api@a083gt-test.iam.gserviceaccount.com"
+      resources-cpu: "2000m"
+      resources-memory: "1Gi"
  - targetId: a083gt-sandbox
    profiles: [sandbox]
    strategy:

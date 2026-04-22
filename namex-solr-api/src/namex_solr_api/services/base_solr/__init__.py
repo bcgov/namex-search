@@ -125,7 +125,10 @@ class Solr:
                 raise Exception("Invalid params given.")  # pylint: disable=broad-exception-raised
             # check for error
             if response.status_code != HTTPStatus.OK:
-                error = response.json().get("error", {}).get("msg", "Error handling Solr request.")
+                try:
+                    error = response.json().get("error", {}).get("msg", "Error handling Solr request.")
+                except Exception:
+                    error = response.text or "Error handling Solr request."
                 raise Exception(error)  # pylint: disable=broad-exception-raised;
 
             return response
@@ -143,7 +146,10 @@ class Solr:
             status_code = HTTPStatus.INTERNAL_SERVER_ERROR
             with suppress(Exception):
                 status_code = response.status_code
-                msg = response.json().get("error", {}).get("msg", msg)
+                try:
+                    msg = response.json().get("error", {}).get("msg", msg)
+                except Exception:
+                    msg = response.text or msg
             current_app.logger.debug(msg)
             raise SolrException(error=msg, status_code=status_code) from err
 
@@ -179,7 +185,7 @@ class Solr:
     def reload_core(self):
         """Reload the solr core."""
         current_app.logger.info("Reloading core...")
-        reload = self.call_solr(method="GET", query=self.reload_url)
+        reload = self.call_solr(method="GET", query=self.reload_url, timeout=120)
         current_app.logger.info("Core reloaded.")
         return reload
 

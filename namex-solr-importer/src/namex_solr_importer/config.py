@@ -67,6 +67,7 @@ class Config:
     SOLR_API_URL = os.getenv("SOLR_API_URL", "http://")
 
     BATCH_SIZE = int(os.getenv("SOLR_BATCH_UPDATE_SIZE", "1000"))
+    SOLR_IMPORT_TIMEOUT = int(os.getenv("SOLR_IMPORT_TIMEOUT", "600"))
     REINDEX_CORE = os.getenv("REINDEX_CORE", "False") == "True"
 
     MODERNIZED_LEGAL_TYPES = os.getenv("MODERNIZED_LEGAL_TYPES", "BEN,CBEN,CP,GP,SP").upper().split(",")
