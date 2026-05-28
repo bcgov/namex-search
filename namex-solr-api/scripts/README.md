@@ -10,16 +10,6 @@ These schedulers are part of the **post-migration infrastructure** for the namex
 
 ---
 
-## Background
-
-### Why these schedulers exist
-
-The `namex-solr-api` service maintains a Solr index used for name conflict searching during Name Request (NR) processing. The index has two ongoing operational needs:
-
-| Need | Problem without it | Solved by |
-|---|---|---|
-| **Sync** | Pending DB update events accumulate but never get pushed to Solr — index goes stale | Sync scheduler |
-| **Heartbeat** | Solr follower may fall behind the leader silently — stale data served to users with no alert | Heartbeat scheduler |
 
 ### Architecture
 
@@ -94,7 +84,6 @@ Business hours only — aligns with org standard (see `search-solr-sync-job-dev`
 
 ### 1. gcloud CLI
 
-Install from: https://cloud.google.com/sdk/docs/install
 
 Authenticate:
 ```bash
@@ -102,11 +91,11 @@ gcloud auth login
 gcloud config set project a083gt-dev   # or target environment
 ```
 
-Or use **GCP Cloud Shell** — gcloud is pre-installed and pre-authenticated.
+Or use **GCP Cloud Shell**.
 
 ### 2. GCP admin access
 
-You need sufficient IAM permissions in the target project to:
+IAM permissions in the target project to:
 - Create Cloud Scheduler jobs (`cloudscheduler.jobs.create`)
 - List Cloud Scheduler jobs (`cloudscheduler.jobs.list`)
 
@@ -161,7 +150,7 @@ The script accepts one argument: `dev | test | sandbox | prod`
 ./create-scheduler.sh prod     ← requires PROJECT_NUMBER to be filled in first
 ```
 
-> **For sandbox and prod:** Update `PROJECT_NUMBER` in the script for those environments before running. The project number can be found in the GCP Console → Project Settings or via `gcloud projects describe a083gt-{env} --format='value(projectNumber)'`.
+> **For sandbox and prod:** Update `PROJECT_NUMBER` in the script for those environments before running..
 
 ### Step 3 — Verify jobs were created
 
@@ -199,7 +188,7 @@ Expected: `Sync successful.` / `Follower synchronization is healthy.`
 Deploy environments in this order — do not proceed to the next until the previous is validated:
 
 ```
-dev → test → sandbox → prod
+dev → test → prod
 ```
 
 `sandbox` and `prod` should only be set up once `namex-solr-api` is confirmed deployed and stable in those environments.
@@ -275,9 +264,6 @@ If the follower falls behind, check:
 - Solr follower replication status at `http://{follower-host}:8983/solr/name_request/replication?command=details`
 - Network connectivity between leader and follower VMs
 
-### Coverage CI failure on `namex-solr-api`
-
-The `namex-solr-api` test suite currently has a pre-existing coverage gap (placeholder tests only — `test_placeholder.py`). This is a known issue tracked separately and is unrelated to these scheduler scripts which add no Python code.
 
 ---
 
