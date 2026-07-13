@@ -73,7 +73,7 @@ def possible_conflict_names():
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
         # TODO: verify these states
-        conflict_states = ["ACTIVE", "APPROVED", "CONDITION"]
+        conflict_states = ["ACTIVE", "APPROVED", "CONDITION", "ACT", "LIQ"]
         categories = {
             PCField.JURISDICTION: categories_json.get(PCField.JURISDICTION.value, None),
             PCField.STATE: categories_json.get(PCField.STATE.value, conflict_states)
