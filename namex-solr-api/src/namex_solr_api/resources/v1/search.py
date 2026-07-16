@@ -100,7 +100,7 @@ def possible_conflict_names():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields_nested,
-            highlighted_fields=[NameField.NAME_Q_SINGLE, NameField.NAME_Q_STEM_HIGHLIGHT, NameField.NAME_Q_SYN],
+            highlighted_fields=[NameField.NAME_Q_SINGLE, NameField.NAME_Q_STEM_HIGHLIGHT, NameField.NAME_Q_PHON_EN, NameField.NAME_Q_SYN],
             query_boost_fields={
                 NameField.NAME_Q_AGRO: 2,
                 NameField.NAME_Q_SINGLE: 2,
@@ -113,6 +113,7 @@ def possible_conflict_names():
                 NameField.NAME_Q_STEM_HIGHLIGHT: "child",
                 NameField.NAME_Q_SINGLE: "child",
                 NameField.NAME_Q_XTRA: "child",
+                NameField.NAME_Q_PHON_EN: "child",
             },
             query_fuzzy_fields={
                 NameField.NAME_Q: {"short": 1, "long": 2},
@@ -141,6 +142,7 @@ def possible_conflict_names():
             highlight_raw = solr_highlighting[result[NameField.UNIQUE_KEY.value]]
             exact_highlights = []
             stem_highlights = []
+            phonetic_highlights = []
             synonym_highlights = []
             if exact_highlights_full_terms := highlight_raw.get(NameField.NAME_Q_SINGLE.value, []):
                 exact_highlights_full_terms = split_highlights(exact_highlights_full_terms)
@@ -149,8 +151,11 @@ def possible_conflict_names():
                         exact_highlights.append(term.upper())
             if stem_highlights := highlight_raw.get(NameField.NAME_Q_STEM_HIGHLIGHT.value, []):
                 stem_highlights = [x for x in split_highlights(stem_highlights) if x not in (exact_highlights)]
-            if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value, []):
+            if phonetic_highlights := highlight_raw.get(NameField.NAME_Q_PHON_EN.value, []):
                 other_highlights = exact_highlights + stem_highlights
+                phonetic_highlights = [x.upper() for x in split_highlights(phonetic_highlights) if x.upper() not in other_highlights]
+            if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value, []):
+                other_highlights = exact_highlights + stem_highlights + phonetic_highlights
                 synonym_highlights = [x.upper() for x in synonym_highlights if x.upper() not in other_highlights]
             docs.append({
                 **result,
@@ -158,6 +163,7 @@ def possible_conflict_names():
                 "highlighting": {
                     "exact": list(set(exact_highlights)),
                     "stems": list(set(stem_highlights)),
+                    "phonetic": list(set(phonetic_highlights)),
                     "synonyms": list(set(synonym_highlights))
                 }
             })

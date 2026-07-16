@@ -760,4 +760,5 @@
   <copyField source="name" dest="name_q_stem_highlight"/>
   <copyField source="name" dest="name_q_synonym"/>
   <copyField source="name" dest="name_q_xtra"/>
+  <copyField source="name" dest="name_q_phon_en"/>
 </schema>

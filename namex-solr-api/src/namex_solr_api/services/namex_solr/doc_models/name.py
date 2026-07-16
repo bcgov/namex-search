@@ -61,6 +61,7 @@ class NameField(BaseEnum):
     NAME_Q_STEM_HIGHLIGHT = "name_q_stem_highlight"  # aggressive stem used for highlight info
     NAME_Q_SYN = "name_q_synonym"  # synonym
     NAME_Q_XTRA = "name_q_xtra"  # classic tokenizer on query (others using whitespace - effects periods, dashes etc.)
+    NAME_Q_PHON_EN = "name_q_phon_en"  # DoubleMetaphone phonetic
 
     # common built in across docs
     SCORE = "score"
