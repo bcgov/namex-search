@@ -483,6 +483,7 @@
       </analyzer>
       <analyzer type="query">
         <tokenizer name="standard"/>
+        <filter name="doubleMetaphone" inject="true"/>
       </analyzer>
     </fieldType>
 
