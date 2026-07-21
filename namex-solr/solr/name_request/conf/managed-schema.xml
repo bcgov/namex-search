@@ -479,7 +479,7 @@
     <fieldType name="phonetic_en" stored="false" indexed="true" class="solr.TextField" >
       <analyzer>
         <tokenizer name="standard"/>
-        <filter name="doubleMetaphone" inject="false"/>
+        <filter name="doubleMetaphone" inject="true"/>
       </analyzer>
     </fieldType>
 
