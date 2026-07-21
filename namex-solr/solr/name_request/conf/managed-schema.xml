@@ -477,9 +477,12 @@
 
     <dynamicField name="*_phon_en" type="phonetic_en"  indexed="true"  stored="true"/>
     <fieldType name="phonetic_en" stored="false" indexed="true" class="solr.TextField" >
-      <analyzer>
+      <analyzer type="index">
         <tokenizer name="standard"/>
         <filter name="doubleMetaphone" inject="true"/>
+      </analyzer>
+      <analyzer type="query">
+        <tokenizer name="standard"/>
       </analyzer>
     </fieldType>
 
