@@ -33,6 +33,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 # TODO: add search endpoints replicating namex queries ? Maybe don't need this
 """Exposes all of the search endpoints in Flask-Blueprint style."""
+import re
 from http import HTTPStatus
 
 from flask import Blueprint, jsonify, request
@@ -133,10 +134,11 @@ def possible_conflict_names():
         docs = []
         for result in results.get("response", {}).get("docs"):
             def split_highlights(highlights: list[str]):
-                """Split list of strings into list of single terms"""
+                """Split list of strings into list of single terms, removing HTML tags"""
                 resp = []
                 for highlight in highlights:
-                    resp += highlight.upper().split(" ")
+                    clean = re.sub(r'<[^>]+>', '', highlight)
+                    resp += [term for term in clean.upper().split(" ") if term]
                 return resp
 
             highlight_raw = solr_highlighting[result[NameField.UNIQUE_KEY.value]]
@@ -153,7 +155,7 @@ def possible_conflict_names():
                 stem_highlights = [x for x in split_highlights(stem_highlights) if x not in (exact_highlights)]
             if phonetic_highlights := highlight_raw.get(NameField.NAME_Q_PHON_EN.value, []):
                 other_highlights = exact_highlights + stem_highlights
-                phonetic_highlights = [x.upper() for x in split_highlights(phonetic_highlights) if x.upper() not in other_highlights]
+                phonetic_highlights = [x.upper() for x in split_highlights(phonetic_highlights) if x.upper() not in other_highlights and x.strip()]
             if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value, []):
                 other_highlights = exact_highlights + stem_highlights + phonetic_highlights
                 synonym_highlights = [x.upper() for x in synonym_highlights if x.upper() not in other_highlights]
