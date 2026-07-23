@@ -46,7 +46,7 @@ elif [[ "$ENV" == "test" ]]; then
   LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "sandbox" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-6656"
-  BOOT_DISK_SIZE_FOLLOWER="16GiB"
+  BOOT_DISK_SIZE_FOLLOWER="24GiB"
   FOLLOWER_JVM_MEM="1g"
 
   MACHINE_TYPE_LEADER="custom-1-6656"
@@ -54,7 +54,7 @@ elif [[ "$ENV" == "sandbox" ]]; then
   LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "prod" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-8192-ext"
-  BOOT_DISK_SIZE_FOLLOWER="16GiB"
+  BOOT_DISK_SIZE_FOLLOWER="24GiB"
   FOLLOWER_JVM_MEM="1g"
 
   MACHINE_TYPE_LEADER="custom-2-10240"

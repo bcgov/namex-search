@@ -23,7 +23,7 @@ REGION="northamerica-northeast1"
 REPO_PATH="${REGION}-docker.pkg.dev/${ARTIFACT_REGISTRY_PROJECT}/vm-repo"
 
 # Template version must match what update-solr-base-image.sh created
-TEMPLATE_VERSION=""
+TEMPLATE_VERSION=""  # Empty for test - use base templates
 
 LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
 FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
@@ -45,15 +45,25 @@ require() {
 check_prereqs() {
     log "Checking required tools…"
     require gcloud
-    require docker
-    require make
-    require oc
 
-    log "Verifying authentication…"
+    log "Verifying gcloud authentication…"
     if ! gcloud auth print-access-token &>/dev/null; then
         echo "ERROR: gcloud is not authenticated. Run: gcloud auth login"
         exit 1
     fi
+}
+
+check_build_prereqs() {
+    check_prereqs
+    require docker
+    require make
+}
+
+check_deploy_prereqs() {
+    check_prereqs
+    require oc
+
+    log "Verifying oc authentication…"
     if ! oc whoami &>/dev/null; then
         echo "ERROR: oc is not authenticated. Run: oc login"
         exit 1
@@ -508,7 +518,7 @@ deploy_instances() {
 
 case "${1:-}" in
     build)
-        check_prereqs
+        check_build_prereqs
         build_images
         ;;
     tag)
@@ -516,7 +526,7 @@ case "${1:-}" in
         tag_images
         ;;
     deploy)
-        check_prereqs
+        check_deploy_prereqs
         deploy_instances
         ;;
     *)
