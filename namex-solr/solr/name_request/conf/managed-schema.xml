@@ -744,6 +744,7 @@
   <field name="name_q_stem_highlight" type="text_stemmed_agro" indexed="true" stored="true"/>
   <field name="name_q_synonym" type="synonym" indexed="true" stored="true"/>
   <field name="name_q_xtra" type="text_extra" indexed="true" stored="false"/>
+  <field name="name_q_phon_en" type="phonetic_en" indexed="true" stored="true"/>
   <field name="name_state" type="string" docValues="true" indexed="true" stored="true"/>
   <field name="submit_count" type="pint" indexed="false" stored="true"/>
   <field name="parent_id" type="string" indexed="false" stored="true"/>

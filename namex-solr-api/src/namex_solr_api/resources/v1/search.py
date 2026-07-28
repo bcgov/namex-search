@@ -130,7 +130,7 @@ def possible_conflict_names():
         )
 
         results = namex_search(params, solr, True)
-        solr_highlighting: dict[str, dict[str, list[str]]] = results.get("highlighting")
+        solr_highlighting: dict[str, dict[str, list[str]]] = results.get("highlighting", {})
         docs = []
         for result in results.get("response", {}).get("docs"):
             def split_highlights(highlights: list[str]):
@@ -141,7 +141,7 @@ def possible_conflict_names():
                     resp += [term for term in clean.upper().split(" ") if term]
                 return resp
 
-            highlight_raw = solr_highlighting[result[NameField.UNIQUE_KEY.value]]
+            highlight_raw = solr_highlighting.get(result[NameField.UNIQUE_KEY.value], {})
             exact_highlights = []
             stem_highlights = []
             phonetic_highlights = []
