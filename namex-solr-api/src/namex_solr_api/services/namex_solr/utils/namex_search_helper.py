@@ -99,8 +99,8 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
                          solr=solr)
 
     resp: dict[str, dict[str, dict[str, list[str]]]] = solr.query(solr_payload, params.start, params.rows)
+    parsed_highlighting = {}
     if solr_highlighting := resp.get('highlighting'):
-        parsed_highlighting = {}
         for result_id, result in solr_highlighting.items():
             parsed_highlighting[result_id] = {}
             for field_enum in params.highlighted_fields:
@@ -108,7 +108,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
                     parsed_highlighting[result_id][field_enum.value] = []
                     for highlight in field_highlights:
                         parsed_highlighting[result_id][field_enum.value] += namex_search_parse_highlighting(highlight)
-        resp['highlighting'] = parsed_highlighting
+    resp['highlighting'] = parsed_highlighting
     return resp
 
 
