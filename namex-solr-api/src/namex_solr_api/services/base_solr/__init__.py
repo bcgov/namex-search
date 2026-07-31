@@ -62,6 +62,8 @@ class Solr:
         # retry settings
         self.retry_total = None
         self.retry_backoff = 0
+        # request timeout (seconds)
+        self.solr_timeout = 60
 
         self.default_start = 0
         self.default_rows = 10
@@ -82,6 +84,7 @@ class Solr:
         self.app = app
         self.retry_total = app.config.get("SOLR_RETRY_TOTAL", 2)
         self.retry_backoff = app.config.get("SOLR_RETRY_BACKOFF_FACTOR", 5)
+        self.solr_timeout = app.config.get(f"{self.config_prefix}_TIMEOUT", 60)
         # NOTE: for a single core implementation set leader/follower cores the same
         self.leader_core = app.config.get(f"{self.config_prefix}_LEADER_CORE")
         self.follower_core = app.config.get(f"{self.config_prefix}_FOLLOWER_CORE")
@@ -96,11 +99,13 @@ class Solr:
                   json_data: dict | None = None,
                   xml_data: str | None = None,
                   leader=True,
-                  timeout=25) -> Response:
+                  timeout=None) -> Response:
         """Call solr instance with given params."""
         base_url = self.leader_url if leader else self.follower_url
         core = self.leader_core if leader else self.follower_core
         url = query.format(url=base_url, core=core)
+        if timeout is None:
+            timeout = self.solr_timeout
         retries = Retry(total=self.retry_total,
                         backoff_factor=self.retry_backoff,
                         status_forcelist=[413, 429, 502, 503, 504],
