@@ -24,9 +24,10 @@ REPO_PATH="${REGION}-docker.pkg.dev/${ARTIFACT_REGISTRY_PROJECT}/vm-repo"
 
 # Template version must match what update-solr-base-image.sh created
 TEMPLATE_VERSION=""  # Empty for test - use base templates
+FOLLOWER_TEMPLATE_VERSION="v8cpu"  # prod: follower uses 8-vCPU template (e2-highcpu-8, JVM 4g)
 
 LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
-FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
+FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${FOLLOWER_TEMPLATE_VERSION:+-$FOLLOWER_TEMPLATE_VERSION}"
 
 
 ########################################
