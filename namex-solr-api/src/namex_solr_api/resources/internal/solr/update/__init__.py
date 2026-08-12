@@ -43,6 +43,7 @@ from namex_solr_api.exceptions import exception_response
 from namex_solr_api.models import SolrDoc, SolrDocEvent, User
 from namex_solr_api.services import jwt
 from namex_solr_api.services.namex_solr.doc_models import Name, PossibleConflict
+from namex_solr_api.services.namex_solr.utils import normalize_nr_num
 
 from .resync import bp as resync_bp
 from .sync import bp as sync_bp
@@ -98,14 +99,15 @@ def _parse_names(data: dict) -> list[Name]:
 
 def _parse_conflict(data: dict) -> PossibleConflict:
     """Parse the data as a PossibleConflict."""
+    nr_num = normalize_nr_num(data.get("nr_num"))
     return PossibleConflict(
-        id=data['nr_num'] if data['type'] == 'NR' else data['corp_num'],
+        id=nr_num if data['type'] == 'NR' else data['corp_num'],
         names=_parse_names(data),
         state=data['state'],
         type=data['type'],
         sub_type=data.get("sub_type"),
         corp_num=data.get('corp_num'),
         jurisdiction=data.get('jurisdiction'),
-        nr_num=data.get('nr_num'),
+        nr_num=nr_num,
         start_date=data.get('start_date'),
     )

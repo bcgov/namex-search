@@ -61,15 +61,16 @@ def parse_conflict(data: dict, conflict_type: str) -> PossibleConflict:
     converted_start_date = None
     if start_date := data.get("start_date"):
         converted_start_date = datetime.isoformat(start_date, timespec="seconds").replace("+00:00", "")
+    nr_num = "".join(data["nr_num"].split()) if data.get("nr_num") else None
     return PossibleConflict(
-        id=data["nr_num"] if conflict_type == "NR" else data["corp_num"],
+        id=nr_num if conflict_type == "NR" else data["corp_num"],
         names=_parse_names(data, conflict_type),
         state=data["state"],
         type=conflict_type,
         sub_type=data.get("sub_type"),
         corp_num=data.get("corp_num"),
         jurisdiction=data.get("jurisdiction") or "BC",
-        nr_num=data.get("nr_num"),
+        nr_num=nr_num,
         start_date=converted_start_date,
     )
 
