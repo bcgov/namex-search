@@ -130,6 +130,25 @@ You should see a non-empty follower core:
 }
 ```
 
+## Solr Admin UI
+
+To access the Solr admin UI, SSH into a Solr VM with a local port forward, then open the UI in your browser.
+
+1. **Look up the VM name** if needed — names change per deploy, e.g. `namex-solr-leader-dev-2026-07-28--103332`:
+   ```bash
+   gcloud compute instances list --project=a083gt-$ENV --sort-by=name
+   ```
+
+2. **SSH with a local port forward** (adjust VM name / project as needed):
+   ```bash
+   gcloud compute ssh namex-solr-leader-dev-2026-07-28--103332 --project=a083gt-dev \
+     -- -L 8983:localhost:8983
+   ```
+
+3. **Open the admin UI** at http://localhost:8983/solr
+
+   The core selector shows `name_request` on the leader VM and `name_request_follower` on the follower VM.
+
 ## Script 2: Base Image (COS) & Startup Script Updates
 
 Use this script whenever you need to update the **base OS image** or the **VM startup script** (`namex-solr/startupscript.txt`). The script clones the existing instance template, swaps in the latest COS image and injects a fresh copy of the startup script from the repo.
