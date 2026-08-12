@@ -45,7 +45,7 @@ from namex_solr_api.models import SearchHistory, User
 from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
-from namex_solr_api.services.namex_solr.utils import namex_search, prep_query_str_namex
+from namex_solr_api.services.namex_solr.utils import namex_search, normalize_nr_num, prep_query_str_namex
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
 
@@ -66,10 +66,11 @@ def possible_conflict_names():
         # set base query params
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
+        normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
             "value": prep_query_str_namex(value, "replace"),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
-            PCField.NR_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.NR_NUM.value, ""))
+            PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
@@ -216,10 +217,11 @@ def nrs():
         # set base query params
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
+        normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
             "value": prep_query_str_namex(value),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
-            PCField.NR_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.NR_NUM.value, ""))
+            PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})

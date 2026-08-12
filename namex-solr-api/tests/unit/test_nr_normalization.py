@@ -20,7 +20,7 @@
 #    may be used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 # ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
@@ -31,7 +31,53 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import normalize_nr_num, prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Unit tests for NR normalization behavior."""
+
+import inspect
+
+from namex_solr_api.resources.internal.solr.update import _parse_conflict
+from namex_solr_api.resources.v1 import search
+from namex_solr_api.services.namex_solr.utils import normalize_nr_num
+
+
+def test_normalize_nr_num_strips_whitespace():
+    """Normalize should remove spaces and preserve characters."""
+    assert normalize_nr_num("NR 6059079") == "NR6059079"
+
+
+def test_normalize_nr_num_keeps_none():
+    """None values should stay None for optional payloads."""
+    assert normalize_nr_num(None) is None
+
+
+def test_update_parse_conflict_uses_normalized_nr_num():
+    """Incremental update path should canonicalize id and nr_num."""
+    possible_conflict = _parse_conflict(
+        {
+            "type": "NR",
+            "nr_num": "NR 3451321",
+            "corp_num": None,
+            "state": "APPROVED",
+            "sub_type": "BC",
+            "jurisdiction": "BC",
+            "start_date": None,
+            "names": [
+                {
+                    "name": "TEST NAME",
+                    "name_state": "A",
+                    "submit_count": 1,
+                    "choice": 1,
+                }
+            ],
+        }
+    )
+
+    assert possible_conflict.id == "NR3451321"
+    assert possible_conflict.nr_num == "NR3451321"
+
+
+def test_search_endpoints_normalize_nr_query_input():
+    """Both search endpoints should normalize nr input before prep."""
+    source = inspect.getsource(search)
+    assert source.count("normalized_nr_num = normalize_nr_num") == 2
+    assert "prep_query_str_namex(normalized_nr_num)" in source

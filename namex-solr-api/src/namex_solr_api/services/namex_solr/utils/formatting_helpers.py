@@ -61,3 +61,10 @@ def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True
         query = re.sub(designation_rgx, r"", query.lower())
 
     return prep_query_str(query, dash, replace_and)
+
+
+def normalize_nr_num(value: str | None) -> str | None:
+    """Normalize an NR number to a canonical no-whitespace format."""
+    if value is None:
+        return None
+    return "".join(value.split())

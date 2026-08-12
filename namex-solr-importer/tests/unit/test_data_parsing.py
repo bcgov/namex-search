@@ -20,7 +20,7 @@
 #    may be used to endorse or promote products derived from this software
 #    without specific prior written permission.
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 # ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
@@ -31,7 +31,49 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""This module manages util methods for the NameX solr service."""
-from .formatting_helpers import normalize_nr_num, prep_query_str_namex
-from .namex_search_helper import namex_search
-from .synonym_helpers import get_synonyms
+"""Unit tests for importer data parsing."""
+
+from namex_solr_importer.utils.data_parsing import parse_conflict
+
+
+def test_parse_conflict_normalizes_nr_num_for_nr_docs():
+    """Importer NR docs should use canonical no-space nr for id and nr_num."""
+    possible_conflict = parse_conflict(
+        {
+            "nr_num": "NR 6059079",
+            "state": "APPROVED",
+            "sub_type": "BC",
+            "jurisdiction": "BC",
+            "start_date": None,
+            "names": [
+                {
+                    "name": "TEST NAME",
+                    "name_state": "A",
+                    "submit_count": 1,
+                    "choice": 1,
+                }
+            ],
+        },
+        "NR",
+    )
+
+    assert possible_conflict.id == "NR6059079"
+    assert possible_conflict.nr_num == "NR6059079"
+
+
+def test_parse_conflict_corp_id_unchanged():
+    """Importer CORP docs should still use corp_num as id."""
+    possible_conflict = parse_conflict(
+        {
+            "corp_num": "BC1234567",
+            "state": "ACTIVE",
+            "sub_type": "BC",
+            "jurisdiction": "BC",
+            "start_date": None,
+            "name": "TEST CORP",
+        },
+        "CORP",
+    )
+
+    assert possible_conflict.id == "BC1234567"
+    assert possible_conflict.nr_num is None
