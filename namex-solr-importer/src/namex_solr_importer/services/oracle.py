@@ -21,8 +21,6 @@ from __future__ import annotations
 import oracledb
 from flask import Flask, current_app, g
 
-oracledb.init_oracle_client()
-
 
 class OracleDB:  # pylint: disable=duplicate-code
     """Oracle database connection object for re-use in application."""
@@ -59,6 +57,9 @@ class OracleDB:  # pylint: disable=duplicate-code
 
         :return: an instance of the OCI Session Pool
         """
+
+        if not getattr(oracledb, "thick_mode", False):
+            oracledb.init_oracle_client()
 
         def init_session(conn, *args):
             cursor = conn.cursor()
