@@ -103,9 +103,10 @@ def collect_namex_data() -> CursorResult:
     current_app.logger.debug("Collecting NameX data...")
     return conn.execute(text("""
         SELECT r.nr_num,
-            COALESCE(n.corp_num, r.corp_num) as corp_num,
+            COALESCE(NULLIF(n.corp_num, ''), NULLIF(r.corp_num, '')) as corp_num,
             CASE
-                WHEN COALESCE(n.corp_num, r.corp_num) IS NOT NULL THEN 'CONSUMED'
+                WHEN COALESCE(NULLIF(n.corp_num, ''), NULLIF(r.corp_num, '')) IS NOT NULL THEN 'CONSUMED'
+                WHEN r.state_cd = 'CONDITIONAL' THEN 'CONDITION'
                 ELSE r.state_cd
             END as state,
             r.xpro_jurisdiction as jurisdiction,
