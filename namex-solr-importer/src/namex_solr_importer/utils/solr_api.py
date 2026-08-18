@@ -72,17 +72,11 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
         # call api import endpoint
         try:
             current_app.logger.debug("Importing batch...")
-            payload_docs = docs[offset:count]
-            if not partial:
-                payload_docs = [
-                    {**doc, "names": {"set": doc["names"]}} if doc.get("names") else doc
-                    for doc in payload_docs
-                ]
             import_resp = requests.put(
                 url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/import",
                 headers=headers,
                 json={
-                    "possibleConflicts": payload_docs,
+                    "possibleConflicts": docs[offset:count],
                     "timeout": "60",
                     "type": "partial" if partial else "full",
                 },
