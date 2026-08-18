@@ -40,7 +40,6 @@ from flask_cors import cross_origin
 from namex_solr_api.exceptions import bad_request_response, exception_response
 from namex_solr_api.models import User
 from namex_solr_api.services import jwt, solr
-from namex_solr_api.services.namex_solr.doc_models import PossibleConflict
 
 bp = Blueprint("IMPORT", __name__, url_prefix="/import")
 
@@ -64,10 +63,9 @@ def import_possible_conflicts():
             current_app.logger.debug("Sending partials list to SOLR...")
             solr.create_or_replace_docs(raw_docs=doc_list, timeout=timeout)
         else:
-            current_app.logger.debug("Translating import payload to entity docs...")
-            possible_conflicts = [PossibleConflict(**e) for e in doc_list]
-            current_app.logger.debug("Sending 'possible conflict' docs to SOLR...")
-            solr.create_or_replace_docs(docs=possible_conflicts, timeout=timeout, additive=False)
+            # full imports: importer already wraps names with {"set": names}
+            current_app.logger.debug("Sending raw docs to SOLR...")
+            solr.create_or_replace_docs(raw_docs=doc_list, timeout=timeout)
 
         current_app.logger.debug("Import completed.")
         return jsonify({"message": "Import finished."}), HTTPStatus.CREATED
