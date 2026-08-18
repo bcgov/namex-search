@@ -121,6 +121,7 @@ def collect_namex_data() -> CursorResult:
             r.request_type_cd as sub_type
         FROM requests r
             JOIN names n on n.nr_id = r.id
+        ORDER BY r.nr_num, n.choice
         """))
 
 

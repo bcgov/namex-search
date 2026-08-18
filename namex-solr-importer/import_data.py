@@ -69,48 +69,82 @@ def _load_synonyms():
 
 def _load_conflicts(data_cur: CursorResult, data_name: str, conflict_type: str):
     """Update namex search with the given conflicts."""
-    current_app.logger.debug("Fetching data...")
-    data = data_cur.fetchall()
     # NOTE: for the colin connection the data_cur is not a 'CursorResult' type
     if isinstance(data_cur, CursorResult):
-        # CursorResult
         namex_descs = data_cur.keys()
     else:
-        # Oracle cusrsor
         namex_descs = [desc[0].lower() for desc in data_cur.description]
-    nr_data: dict[str, dict] = {}
-    possible_conflicts = []
-    current_app.logger.debug("Parsing data...")
-    for item in data:
-        item_dict = dict(zip(namex_descs, item, strict=False))
-        if conflict_type == "CORP":
-            # corps can be added to possible_conflicts right away
-            possible_conflicts.append(asdict(parse_conflict(item_dict, conflict_type)))
-        elif conflict_type == "NR":
-            # each nr name will have its own record, so we have to put them together
-            name_dict = {
-                "name": item_dict["name"],
-                "name_state": item_dict["name_state"],
-                "submit_count": item_dict["submit_count"],
-                "choice": item_dict["choice"],
-            }
 
-            if (nr_num := item_dict["nr_num"]) in nr_data:
-                # add name to nr
-                nr_data[nr_num]["names"].append(name_dict)
-            else:
-                # add 'names' field with this name (others under the same NR will be added to this)
-                item_dict["names"] = [name_dict]
-                # add nr to dict
-                nr_data[nr_num] = item_dict
+    batch_size = current_app.config["BATCH_SIZE"]
+    count = 0
+    batch = []
+    last_record = None
 
-    for nr_conflict in nr_data.values():
-        # parse all the nrs (the names will be grouped underneath them now)
-        possible_conflicts.append(asdict(parse_conflict(nr_conflict, conflict_type)))
+    current_app.logger.debug("Streaming data...")
 
-    current_app.logger.debug("Importing data...")
-    final_record = [possible_conflicts[-1]], data_name
-    return import_conflicts(possible_conflicts, data_name), final_record
+    if conflict_type == "CORP":
+        while True:
+            rows = data_cur.fetchmany(batch_size)
+            if not rows:
+                break
+            for item in rows:
+                item_dict = dict(zip(namex_descs, item, strict=False))
+                doc = asdict(parse_conflict(item_dict, conflict_type))
+                batch.append(doc)
+                last_record = doc
+            if len(batch) >= batch_size:
+                count += import_conflicts(batch, data_name)
+                batch = []
+
+    elif conflict_type == "NR":
+        current_nr_num = None
+        names = []
+        nr_data = None
+
+        while True:
+            rows = data_cur.fetchmany(batch_size)
+            if not rows:
+                break
+            for item in rows:
+                item_dict = dict(zip(namex_descs, item, strict=False))
+                nr_num = item_dict["nr_num"]
+
+                if nr_num != current_nr_num:
+                    # process previous NR
+                    if current_nr_num is not None:
+                        nr_data["names"] = names
+                        doc = asdict(parse_conflict(nr_data, conflict_type))
+                        batch.append(doc)
+                        last_record = doc
+                        if len(batch) >= batch_size:
+                            count += import_conflicts(batch, data_name)
+                            batch = []
+                    # start new NR
+                    current_nr_num = nr_num
+                    names = []
+                    nr_data = item_dict
+
+                name_dict = {
+                    "name": item_dict["name"],
+                    "name_state": item_dict["name_state"],
+                    "submit_count": item_dict["submit_count"],
+                    "choice": item_dict["choice"],
+                }
+                names.append(name_dict)
+
+        # process last NR
+        if current_nr_num is not None:
+            nr_data["names"] = names
+            doc = asdict(parse_conflict(nr_data, conflict_type))
+            batch.append(doc)
+            last_record = doc
+
+    current_app.logger.debug("Importing remaining data...")
+    if batch:
+        count += import_conflicts(batch, data_name)
+
+    final_record = [last_record], data_name
+    return count, final_record
 
 
 def _load_nrs():

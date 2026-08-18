@@ -102,6 +102,8 @@ class SolrDocEvent(Base):
     def update_events_status(cls, status: Status, events: list[SolrDocEvent]):
         """Update the status of the given events."""
         for doc_event in events:
+            if doc_event is None:
+                continue
             doc_event.event_status = status
             db.session.add(doc_event)
         db.session.commit()
