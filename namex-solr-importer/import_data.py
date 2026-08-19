@@ -33,6 +33,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """The Search solr data import service."""
 
+import os
 import sys
 from dataclasses import asdict
 
@@ -251,9 +252,23 @@ def load_conflicts_core():  # noqa: PLR0915
         sys.exit(1)
 
 
+def _write_sentinel():
+    """Write sentinel file to signal sidecar that import is done."""
+    try:
+        sentinel_path = "/code/cache/.import-done"
+        os.makedirs(os.path.dirname(sentinel_path), exist_ok=True)
+        with open(sentinel_path, "w") as f:
+            f.write("done")
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+
 if __name__ == "__main__":
     print("Starting data importer...")  # noqa: T201
     app = create_app()
     with app.app_context():
-        load_conflicts_core()
+        try:
+            load_conflicts_core()
+        finally:
+            _write_sentinel()
         sys.exit(0)
