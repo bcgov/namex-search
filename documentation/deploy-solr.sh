@@ -22,11 +22,12 @@ ZONES=("northamerica-northeast1-a" "northamerica-northeast1-b" "northamerica-nor
 REGION="northamerica-northeast1"
 REPO_PATH="${REGION}-docker.pkg.dev/${ARTIFACT_REGISTRY_PROJECT}/vm-repo"
 
-# Template version must match what update-solr-base-image.sh created
-TEMPLATE_VERSION=""  # Empty for test - use base templates
+# Template versions must match what update-solr-base-image.sh created
+LEADER_TEMPLATE_VERSION=""       # e.g., "v2" or "v3"
+FOLLOWER_TEMPLATE_VERSION=""  # e.g., "v8cpu"
 
-LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
-FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
+LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}${LEADER_TEMPLATE_VERSION:+-$LEADER_TEMPLATE_VERSION}"
+FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${FOLLOWER_TEMPLATE_VERSION:+-$FOLLOWER_TEMPLATE_VERSION}"
 
 
 ########################################
