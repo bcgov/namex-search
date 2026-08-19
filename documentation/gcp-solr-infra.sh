@@ -53,13 +53,13 @@ elif [[ "$ENV" == "sandbox" ]]; then
   BOOT_DISK_SIZE_LEADER="24GiB"
   LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "prod" ]]; then
-  MACHINE_TYPE_FOLLOWER="e2-highcpu-8"
+  MACHINE_TYPE_FOLLOWER="e2-standard-4"
   BOOT_DISK_SIZE_FOLLOWER="24GiB"
   FOLLOWER_JVM_MEM="4g"
 
-  MACHINE_TYPE_LEADER="custom-2-10240"
+  MACHINE_TYPE_LEADER="e2-standard-4"
   BOOT_DISK_SIZE_LEADER="24GiB"
-  LEADER_JVM_MEM="2g"
+  LEADER_JVM_MEM="4g"
 fi
 
 FOLLOWER_ROLE="follower"

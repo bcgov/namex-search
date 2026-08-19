@@ -96,10 +96,12 @@ def reindex_prep_endpoint():
         for i in range(20):
             current_app.logger.debug(f"Checking new backup {i+1}/20...")
             if backup_detail := get_replication_detail("backup", True):
-                backup_start_time = datetime.fromisoformat(backup_detail["startTime"])
-                if backup_detail["status"] == "success" and backup_trigger_time < backup_start_time:
-                    backup_succeeded = True
-                    break
+                start_time_str = backup_detail.get("startTime")
+                if start_time_str and backup_detail.get("status") == "success":
+                    backup_start_time = datetime.fromisoformat(start_time_str)
+                    if backup_trigger_time < backup_start_time:
+                        backup_succeeded = True
+                        break
             sleep(30 + (i*2))
 
         if not backup_succeeded:

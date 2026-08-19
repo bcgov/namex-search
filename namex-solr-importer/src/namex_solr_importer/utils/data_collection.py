@@ -65,8 +65,8 @@ def collect_colin_data():
         join corp_op_state cos on cos.state_typ_cd = cs.state_typ_cd
         join corp_name cn on cn.corp_num = c.corp_num
         left join (select * from jurisdiction where end_event_id is null) j on j.corp_num = c.corp_num
-        WHERE c.corp_typ_cd in ({_get_stringified_list_for_sql('CONFLICT_LEGAL_TYPES')})
-            and c.corp_typ_cd not in ({_get_stringified_list_for_sql('MODERNIZED_LEGAL_TYPES')})
+        WHERE c.corp_typ_cd in ({_get_stringified_list_for_sql("CONFLICT_LEGAL_TYPES")})
+            and c.corp_typ_cd not in ({_get_stringified_list_for_sql("MODERNIZED_LEGAL_TYPES")})
             and cs.end_event_id is null
             and cn.end_event_id is null
             and cn.corp_name_typ_cd in ('CO', 'NB')
@@ -80,7 +80,8 @@ def collect_lear_data() -> CursorResult:
     current_app.logger.debug("Connecting to LEAR Postgres instance...")
     conn = lear_db.db.engine.connect()
     current_app.logger.debug("Collecting LEAR data...")
-    return conn.execute(text(f"""
+    return conn.execute(
+        text(f"""
         SELECT b.identifier as corp_num, b.legal_name as name,
             b.founding_date as start_date, b.state,
             CASE j.region
@@ -90,10 +91,11 @@ def collect_lear_data() -> CursorResult:
             END as jurisdiction
         FROM businesses b
         LEFT JOIN jurisdictions j on j.business_id = b.id
-        WHERE legal_type in ({_get_stringified_list_for_sql('CONFLICT_LEGAL_TYPES')})
-            and legal_type in ({_get_stringified_list_for_sql('MODERNIZED_LEGAL_TYPES')})
+        WHERE legal_type in ({_get_stringified_list_for_sql("CONFLICT_LEGAL_TYPES")})
+            and legal_type in ({_get_stringified_list_for_sql("MODERNIZED_LEGAL_TYPES")})
             and state in ('ACTIVE', 'HISTORICAL')
-        """))
+        """)
+    )
 
 
 def collect_namex_data() -> CursorResult:
@@ -101,7 +103,8 @@ def collect_namex_data() -> CursorResult:
     current_app.logger.debug("Connecting to NameX Postgres instance...")
     conn = namex_db.db.engine.connect()
     current_app.logger.debug("Collecting NameX data...")
-    return conn.execute(text("""
+    return conn.execute(
+        text("""
         SELECT r.nr_num,
             COALESCE(NULLIF(n.corp_num, ''), NULLIF(r.corp_num, '')) as corp_num,
             CASE
@@ -121,7 +124,9 @@ def collect_namex_data() -> CursorResult:
             r.request_type_cd as sub_type
         FROM requests r
             JOIN names n on n.nr_id = r.id
-        """))
+        ORDER BY r.nr_num, n.choice
+        """)
+    )
 
 
 def collect_synonyms_data() -> CursorResult:
@@ -130,8 +135,10 @@ def collect_synonyms_data() -> CursorResult:
     conn = namex_db.db.engine.connect()
     current_app.logger.debug("Collecting Synonym data...")
     # TODO: verify can just collect 'synonym' table / 'synonyms_text' column (there's also synonym_orig / stems_text)
-    return conn.execute(text("""
+    return conn.execute(
+        text("""
         SELECT synonyms_text
         FROM synonym
         WHERE enabled='t'
-        """))
+        """)
+    )
