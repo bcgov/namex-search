@@ -175,7 +175,7 @@ def _load_lear_corps():
     return count, final_record
 
 
-def load_conflicts_core():  # noqa: PLR0915
+def load_conflicts_core():
     """Load data from Synonyms, NameX, LEAR and COLIN into the conflicts core."""
     try:
         is_reindex = current_app.config.get("REINDEX_CORE")
@@ -187,7 +187,9 @@ def load_conflicts_core():  # noqa: PLR0915
 
         if is_reindex and current_app.config.get("IS_PARTIAL_IMPORT"):
             current_app.logger.error("Attempted reindex on partial data set.")
-            current_app.logger.debug("Setting reindex to False to prevent potential data loss.")
+            current_app.logger.debug(
+                "Setting reindex to False to prevent potential data loss."
+            )
             is_reindex = False
 
         if is_reindex:
@@ -206,14 +208,20 @@ def load_conflicts_core():  # noqa: PLR0915
             colin_count = 0
             if include_colin_load:
                 colin_count, final_record = _load_colin_corps()
-                current_app.logger.debug(f"Total COLIN Corp records imported: {colin_count}")
+                current_app.logger.debug(
+                    f"Total COLIN Corp records imported: {colin_count}"
+                )
 
             lear_count = 0
             if include_lear_load:
                 lear_count, final_record = _load_lear_corps()
-                current_app.logger.debug(f"Total LEAR Corp records imported: {lear_count}")
+                current_app.logger.debug(
+                    f"Total LEAR Corp records imported: {lear_count}"
+                )
 
-            current_app.logger.debug(f"Total possible conflicts imported: {nr_count + colin_count + lear_count}")
+            current_app.logger.debug(
+                f"Total possible conflicts imported: {nr_count + colin_count + lear_count}"
+            )
 
         except Exception as err:
             if is_reindex:
@@ -237,7 +245,9 @@ def load_conflicts_core():  # noqa: PLR0915
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             current_app.logger.debug(error.with_traceback(None))
-            current_app.logger.error("Final commit failed. (This will only effect DEV).")
+            current_app.logger.error(
+                "Final commit failed. (This will only effect DEV)."
+            )
 
         if is_reindex:
             current_app.logger.debug("---------- Post Reindex Actions ----------")
