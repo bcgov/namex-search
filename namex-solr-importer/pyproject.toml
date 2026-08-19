@@ -146,6 +146,10 @@ select = [
     "F", # pyflakes
 ]
 
+[tool.ruff.lint.pylint]
+max-branches = 16
+max-statements = 60
+
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = [
