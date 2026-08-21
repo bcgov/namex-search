@@ -36,6 +36,7 @@
 import os
 import sys
 from dataclasses import asdict
+from datetime import UTC, datetime
 
 from flask import current_app
 from sqlalchemy import CursorResult
@@ -179,11 +180,17 @@ def load_conflicts_core():
     """Load data from Synonyms, NameX, LEAR and COLIN into the conflicts core."""
     try:
         is_reindex = current_app.config.get("REINDEX_CORE")
+        import_started_at = datetime.now(UTC)
         include_synonym_load = current_app.config.get("INCLUDE_SYNONYM_LOAD")
         include_namex_load = current_app.config.get("INCLUDE_NAMEX_LOAD")
         include_colin_load = current_app.config.get("INCLUDE_COLIN_LOAD")
         include_lear_load = current_app.config.get("INCLUDE_LEAR_LOAD")
         final_record = None
+
+        current_app.logger.debug(
+            "Import watermark captured at: %s",
+            import_started_at.isoformat(),
+        )
 
         if is_reindex and current_app.config.get("IS_PARTIAL_IMPORT"):
             current_app.logger.error("Attempted reindex on partial data set.")
@@ -230,7 +237,7 @@ def load_conflicts_core():
 
         try:
             current_app.logger.debug("---------- Resync ----------")
-            resync()
+            resync(import_started_at)
         except Exception as error:  # pylint: disable=broad-exception-caught
             current_app.logger.debug(error.with_traceback(None))
             current_app.logger.error("Resync failed.")

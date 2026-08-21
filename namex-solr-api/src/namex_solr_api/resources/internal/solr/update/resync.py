@@ -50,22 +50,37 @@ bp = Blueprint("RESYNC", __name__, url_prefix="/resync")
 @cross_origin(origins="*")
 @jwt.requires_roles([User.Role.system.value])
 def resync_solr():
-    """Resync solr docs from the given date or identifiers given."""
+    """Resync solr docs from an explicit timestamp, a minute offset, or identifiers."""
     try:
-        request_json: dict = request.json
+        request_json: dict = request.json or {}
         from_datetime = datetime.now(UTC)
+        since = request_json.get("since")
         minutes_offset = request_json.get("minutesOffset")
         identifiers_to_resync = request_json.get("identifiers")
-        if not minutes_offset and not identifiers_to_resync:
-            return bad_request_response('Missing required field "minutesOffset" or "identifiers".')
-        try:
-            minutes_offset = float(minutes_offset)
-        except:  # pylint: disable=bare-except
-            if not identifiers_to_resync:
-                return bad_request_response(
-                    'Invalid value for field "minutesOffset". Expecting a number.')
 
-        if minutes_offset:
+        if not since and not identifiers_to_resync and minutes_offset is None:
+            return bad_request_response('Missing required field "since", "minutesOffset" or "identifiers".')
+
+        if since:
+            try:
+                resync_date = datetime.fromisoformat(since)
+            except ValueError:
+                return bad_request_response('Invalid value for field "since". Expecting an ISO timestamp.')
+
+            if resync_date.tzinfo is None:
+                resync_date = resync_date.replace(tzinfo=UTC)
+
+            identifiers_to_resync = SolrDoc.get_updated_entity_ids_after_date(resync_date)
+
+        elif identifiers_to_resync:
+            pass
+
+        elif minutes_offset is not None:
+            try:
+                minutes_offset = float(minutes_offset)
+            except (TypeError, ValueError):
+                return bad_request_response('Invalid value for field "minutesOffset". Expecting a number.')
+
             # get all updates since the from_datetime
             resync_date = from_datetime - timedelta(minutes=minutes_offset)
             identifiers_to_resync = SolrDoc.get_updated_entity_ids_after_date(resync_date)

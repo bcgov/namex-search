@@ -34,6 +34,7 @@
 """Manages util methods for updating possible conflict records via the namex solr api."""
 
 import time
+from datetime import datetime
 from http import HTTPStatus
 
 import requests
@@ -144,17 +145,22 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
     return count
 
 
-def resync():
+def resync(since: datetime | None = None):
     """Resync to catch any records that had an update during the import."""
     current_app.logger.debug("Getting token for Resync...")
     token = auth.get_bearer_token()
     headers = {"Authorization": "Bearer " + token}
 
+    payload = {"minutesOffset": current_app.config.get("RESYNC_OFFSET")}
+    if since:
+        payload = {"since": since.isoformat()}
+        current_app.logger.debug("Using explicit resync watermark: %s", payload["since"])
+
     current_app.logger.debug("Resyncing any overwritten docs during import...")
     resync_resp = requests.post(
         url=f"{current_app.config.get('SOLR_API_URL')}/internal/solr/update/resync",
         headers=headers,
-        json={"minutesOffset": current_app.config.get("RESYNC_OFFSET")},
+        json=payload,
         timeout=60,
     )
     if resync_resp.status_code != HTTPStatus.CREATED:
