@@ -36,7 +36,7 @@
 import re
 from http import HTTPStatus
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask.globals import request_ctx
 from flask_cors import cross_origin
 
@@ -53,7 +53,7 @@ bp = Blueprint("SEARCH", __name__, url_prefix="/search")
 @bp.post("/possible-conflict-names")
 @cross_origin(origins="*")
 @jwt.requires_auth
-def possible_conflict_names():
+def possible_conflict_names():  # noqa: PLR0912, PLR0915
     """Return a list of possible conflict name results from solr."""
     try:
         # NOTE: request_ctx.current_user is set by jwt.requires_auth
@@ -93,6 +93,20 @@ def possible_conflict_names():
 
         start = request_json.get("start", solr.default_start)
         rows = request_json.get("rows", solr.default_rows)
+        try:
+            start = int(start)
+        except (TypeError, ValueError):
+            start = solr.default_start
+        try:
+            rows = max(0, int(rows))
+        except (TypeError, ValueError):
+            rows = solr.default_rows
+
+        highlighted_fields = [NameField.NAME_Q_SINGLE, NameField.NAME_Q_STEM_HIGHLIGHT, NameField.NAME_Q_PHON_EN, NameField.NAME_Q_SYN]
+        max_highlighted_docs = max(
+            0,
+            int(current_app.config.get("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", 50)),
+        )
 
         params = QueryParams(
             query=query,
@@ -102,7 +116,7 @@ def possible_conflict_names():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields_nested,
-            highlighted_fields=[NameField.NAME_Q_SINGLE, NameField.NAME_Q_STEM_HIGHLIGHT, NameField.NAME_Q_PHON_EN, NameField.NAME_Q_SYN],
+            highlighted_fields=highlighted_fields,
             query_boost_fields={
                 NameField.NAME_Q_AGRO: 2,
                 NameField.NAME_Q_SINGLE: 2,
@@ -130,8 +144,50 @@ def possible_conflict_names():
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
         )
 
-        results = namex_search(params, solr, True)
-        solr_highlighting: dict[str, dict[str, list[str]]] = results.get("highlighting", {})
+        results = None
+        solr_highlighting: dict[str, dict[str, list[str]]] = {}
+        if rows <= max_highlighted_docs:
+            results = namex_search(params, solr, True)
+            solr_highlighting = results.get("highlighting", {})
+        else:
+            # Run the main search without highlighting, then a smaller highlighted pass.
+            results = namex_search(QueryParams(
+                query=params.query,
+                rows=params.rows,
+                start=params.start,
+                categories=params.categories,
+                child_query=params.child_query,
+                child_categories=params.child_categories,
+                fields=params.fields,
+                highlighted_fields=[],
+                query_fields=params.query_fields,
+                query_boost_fields=params.query_boost_fields,
+                query_fuzzy_fields=params.query_fuzzy_fields,
+                query_synonym_fields=params.query_synonym_fields,
+                full_query_boosts=params.full_query_boosts,
+                exclude_sub_types=params.exclude_sub_types,
+            ), solr, True)
+
+            highlight_rows = min(rows, max_highlighted_docs)
+            if highlight_rows > 0:
+                highlight_results = namex_search(QueryParams(
+                    query=params.query,
+                    rows=highlight_rows,
+                    start=params.start,
+                    categories=params.categories,
+                    child_query=params.child_query,
+                    child_categories=params.child_categories,
+                    fields=params.fields,
+                    highlighted_fields=highlighted_fields,
+                    query_fields=params.query_fields,
+                    query_boost_fields=params.query_boost_fields,
+                    query_fuzzy_fields=params.query_fuzzy_fields,
+                    query_synonym_fields=params.query_synonym_fields,
+                    full_query_boosts=params.full_query_boosts,
+                    exclude_sub_types=params.exclude_sub_types,
+                ), solr, True)
+                solr_highlighting = highlight_results.get("highlighting", {})
+
         docs = []
         for result in results.get("response", {}).get("docs"):
             def split_highlights(highlights: list[str]):
