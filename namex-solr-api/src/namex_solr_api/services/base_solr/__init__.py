@@ -64,6 +64,8 @@ class Solr:
         self.retry_backoff = 0
         # request timeout (seconds)
         self.solr_timeout = 60
+        # query timeout (milliseconds)
+        self.time_allowed = 10000
 
         self.default_start = 0
         self.default_rows = 10
@@ -85,6 +87,7 @@ class Solr:
         self.retry_total = app.config.get("SOLR_RETRY_TOTAL", 2)
         self.retry_backoff = app.config.get("SOLR_RETRY_BACKOFF_FACTOR", 5)
         self.solr_timeout = app.config.get(f"{self.config_prefix}_TIMEOUT", 60)
+        self.time_allowed = app.config.get(f"{self.config_prefix}_TIME_ALLOWED", 10000)
         # NOTE: for a single core implementation set leader/follower cores the same
         self.leader_core = app.config.get(f"{self.config_prefix}_LEADER_CORE")
         self.follower_core = app.config.get(f"{self.config_prefix}_FOLLOWER_CORE")
@@ -174,10 +177,13 @@ class Solr:
         response = self.call_solr("POST", self.update_url, xml_data=payload, timeout=60)
         return response
 
-    def query(self, payload: dict[str, str], start: int | None = None, rows: int | None = None) -> dict:
+    def query(self, payload: dict, start: int | None = None, rows: int | None = None) -> dict:
         """Return a list of solr docs from the solr query handler for the given params."""
         payload["offset"] = start if start else self.default_start
         payload["limit"] = rows if rows else self.default_rows
+        payload_params = payload.get("params", {})
+        payload_params.setdefault("timeAllowed", self.time_allowed)
+        payload["params"] = payload_params
         response = self.call_solr("POST", self.search_url, json_data=payload, leader=False)
         return response.json()
 

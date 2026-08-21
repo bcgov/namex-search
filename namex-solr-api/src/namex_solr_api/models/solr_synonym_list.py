@@ -37,7 +37,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import auto
 
-from sqlalchemy import Column, DateTime, String, func
+from sqlalchemy import Column, DateTime, String, func, or_
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,6 +87,16 @@ class SolrSynonymList(Base):
     def find_all_beginning_with_phrase(cls, phrase: str, synonym_type: Type) -> list[SolrSynonymList]:
         """Return all the solr synonym objects for synonyms including the given phrase/word."""
         return cls.query.filter_by(synonym_type=synonym_type.value).filter(cls.synonym.ilike(f"{phrase}%")).all()
+
+    @classmethod
+    def find_all_beginning_with_phrases(cls, phrases: list[str], synonym_type: Type) -> list[SolrSynonymList]:
+        """Return all synonyms that begin with one of the given phrases for the synonym type."""
+        normalized_phrases = sorted({phrase.strip().lower() for phrase in phrases if phrase and phrase.strip()})
+        if not normalized_phrases:
+            return []
+
+        phrase_filters = [cls.synonym.ilike(f"{phrase}%") for phrase in normalized_phrases]
+        return cls.query.filter_by(synonym_type=synonym_type.value).filter(or_(*phrase_filters)).all()
     
     @staticmethod
     def create_or_replace(synonym_type: SolrSynonymList.Type, synonym: str, synonym_list: list[str], replace: bool):

@@ -65,6 +65,7 @@ class Config:
     SOLR_SVC_NAMEX_FOLLOWER_URL = os.getenv("SOLR_SVC_NAMEX_FOLLOWER_URL", "http://localhost:8863/solr")
     SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "10000"))
     SOLR_SVC_NAMEX_TIMEOUT = int(os.getenv("SOLR_SVC_NAMEX_TIMEOUT", "60"))
+    SOLR_SVC_NAMEX_TIME_ALLOWED = int(os.getenv("SOLR_SVC_NAMEX_TIME_ALLOWED", "10000"))
 
     AUTH_SVC_URL = os.getenv("AUTH_API_URL", "") + os.getenv("AUTH_API_VERSION", "")
 

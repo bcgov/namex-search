@@ -154,7 +154,8 @@ class QueryBuilder:
         synonym_info: dict,
         synonym_fields: dict[BaseEnum, str],
         is_child_search: bool,
-        boost_fields: dict[BaseEnum, int]
+        boost_fields: dict[BaseEnum, int],
+        preloaded_synonym_terms: dict[BaseEnum, dict[str, list[list[str]]]]
     ):
         """Return the term clause with the added synonym clauses."""
         term = terms[term_index]
@@ -174,7 +175,13 @@ class QueryBuilder:
             if synonym_terms and term_index < synonym_start_index + len(synonym_terms):
                 # a synonym matched on a previous term and includes the current term (multi word synonym)
                 synonym_clause = f"{field_value}:{' '.join(synonym_terms)}"
-            elif new_synonym_terms := self.find_synonym_terms(term, term_index, terms, field):
+            elif new_synonym_terms := self.find_synonym_terms(
+                term,
+                term_index,
+                terms,
+                field,
+                preloaded_synonym_terms.get(field)
+            ):
                 synonym_info[field]["synonym_terms"] = new_synonym_terms
                 synonym_info[field]["synonym_start_index"] = term_index
                 synonym_clause = f"{field_value}:{' '.join(new_synonym_terms)}"
@@ -196,7 +203,28 @@ class QueryBuilder:
         """Return a solr query with filters for each subsequent term."""
         terms = query["value"].split()
         synonym_info = {}
+        preloaded_synonym_terms = {}
         query_clause = ""
+
+        if synonym_fields and terms:
+            # Batch synonym prefix lookups once per field to avoid N+1 DB queries per term.
+            from namex_solr_api.models import SolrSynonymList
+
+            normalized_terms = sorted({term.lower() for term in terms if term})
+            for field in synonym_fields:
+                synonym_groups = {}
+                synonyms = SolrSynonymList.find_all_beginning_with_phrases(
+                    normalized_terms,
+                    self.synonym_field_map[field]
+                )
+                for synonym in synonyms:
+                    synonym_terms = synonym.synonym.split()
+                    if not synonym_terms:
+                        continue
+                    start_term = synonym_terms[0].lower()
+                    synonym_groups.setdefault(start_term, []).append(synonym_terms)
+                preloaded_synonym_terms[field] = synonym_groups
+
         # Each term in the searched 'value' must match on at least one of:
         # 'fields', 'fuzzy_fields' or 'synonym_fields' query clauses.
         # This loop adds clauses for the all the given fields for each term
@@ -205,7 +233,16 @@ class QueryBuilder:
             term_clause = self.build_term_clause(term, fields, boost_fields, fuzzy_fields, is_child_search)
 
             # Add the synonym field clauses
-            term_clause = self.build_term_synonym_clauses(term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search, boost_fields)
+            term_clause = self.build_term_synonym_clauses(
+                term_clause,
+                terms,
+                term_index,
+                synonym_info,
+                synonym_fields,
+                is_child_search,
+                boost_fields,
+                preloaded_synonym_terms
+            )
 
             # Join the term clause to the full query
             query_clause = self.join_clause(query_clause, f"({term_clause})", "AND")
@@ -219,31 +256,43 @@ class QueryBuilder:
 
         return {"query": query_clause, "filter": filters}
     
-    def find_synonym_terms(self, start_term: str, start_term_index: int, terms: list[str], field: BaseEnum) -> list[str]:
+    def find_synonym_terms(
+        self,
+        start_term: str,
+        start_term_index: int,
+        terms: list[str],
+        field: BaseEnum,
+        preloaded_synonym_terms: dict[str, list[list[str]]] | None = None
+    ) -> list[str]:
         """Return the synonym terms that match the starting term and following query terms."""
-        # NOTE: when this is in a common space the model will be a common dependency similar to whats been done in lear
-        from namex_solr_api.models import SolrSynonymList
-
         # the best match will be the one with the most words (i.e. british columbia > british)
         best_synonym_match_terms = []
-        # check if term exists inside a synonym
-        if synonyms := SolrSynonymList.find_all_beginning_with_phrase(start_term, self.synonym_field_map[field]):
-            for synonym_terms in [syn.synonym.split() for syn in synonyms]:
-                if len(synonym_terms) > len(terms[start_term_index:]) or len(synonym_terms) == 0:
-                    # not possible to be this synonym
-                    continue
-                if len(synonym_terms) < len(best_synonym_match_terms):
-                    # this is a shorter synonym than one thats already matched so skip
-                    continue
+        if preloaded_synonym_terms is not None:
+            candidate_synonyms = preloaded_synonym_terms.get(start_term.lower(), [])
+        else:
+            # NOTE: fallback for callers that don't pass preloaded synonym terms.
+            from namex_solr_api.models import SolrSynonymList
+            candidate_synonyms = [
+                syn.synonym.split()
+                for syn in SolrSynonymList.find_all_beginning_with_phrase(start_term, self.synonym_field_map[field])
+            ]
 
-                # see if all terms of the synonym are in the query
-                full_synonym_in_query = True
-                for i, synonym_term in enumerate(synonym_terms):
-                    if terms[start_term_index + i].lower() != synonym_term.lower():
-                        full_synonym_in_query = False
-                        break
-                if full_synonym_in_query:
-                    best_synonym_match_terms = synonym_terms
+        for synonym_terms in candidate_synonyms:
+            if len(synonym_terms) > len(terms[start_term_index:]) or len(synonym_terms) == 0:
+                # not possible to be this synonym
+                continue
+            if len(synonym_terms) < len(best_synonym_match_terms):
+                # this is a shorter synonym than one thats already matched so skip
+                continue
+
+            # see if all terms of the synonym are in the query
+            full_synonym_in_query = True
+            for i, synonym_term in enumerate(synonym_terms):
+                if terms[start_term_index + i].lower() != synonym_term.lower():
+                    full_synonym_in_query = False
+                    break
+            if full_synonym_in_query:
+                best_synonym_match_terms = synonym_terms
 
         return best_synonym_match_terms
 

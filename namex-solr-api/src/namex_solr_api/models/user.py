@@ -174,6 +174,7 @@ class User(Base):
                     {"jwt_key": current_app.config.get("JWT_OIDC_LASTNAME"), "table_key": "lastname"},
                     {"jwt_key": "sub", "table_key": "sub"},
                 ]
+                updated_fields = []
                 for keys in user_keys:
                     value = jwt_oidc_token.get(keys["jwt_key"], None)
                     if value and value != getattr(user, keys["table_key"]):
@@ -181,8 +182,11 @@ class User(Base):
                             f'found new user value, attempting to update user {keys["table_key"]}:{value}'
                         )
                         setattr(user, keys["table_key"], value)
-                        user.save()
-                        current_app.logger.debug(f"Updated user {value}.")
+                        updated_fields.append(keys["table_key"])
+
+                if updated_fields:
+                    user.save()
+                    current_app.logger.debug(f"Updated user fields: {', '.join(updated_fields)}")
 
             return user
         except Exception as err:
