@@ -76,6 +76,11 @@ def _call_reindex_endpoint(endpoint: str, timeout: int = 1800) -> bool:
         raise
 
 
+def reindex_optimize() -> bool:
+    """Trigger Solr optimize via the API."""
+    return _call_reindex_endpoint("optimize")
+
+
 def reindex_prep() -> bool:
     """Trigger pre-reindex operations via the API."""
     return _call_reindex_endpoint("prep")

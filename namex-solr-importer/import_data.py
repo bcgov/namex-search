@@ -51,6 +51,7 @@ from namex_solr_importer.utils import (
     import_conflicts,
     parse_conflict,
     parse_synonyms,
+    reindex_optimize,
     reindex_post,
     reindex_prep,
     reindex_recovery,
@@ -256,8 +257,9 @@ def load_conflicts_core():
                 "Final commit failed. (This will only effect DEV)."
             )
 
+        current_app.logger.debug("---------- Post Import Actions ----------")
+        reindex_optimize()
         if is_reindex:
-            current_app.logger.debug("---------- Post Reindex Actions ----------")
             reindex_post()
 
         current_app.logger.debug("SOLR import finished successfully.")
