@@ -177,7 +177,7 @@ def _load_lear_corps():
     return count, final_record
 
 
-def load_conflicts_core():
+def load_conflicts_core():  # noqa: PLR0915
     """Load data from Synonyms, NameX, LEAR and COLIN into the conflicts core."""
     try:
         is_reindex = current_app.config.get("REINDEX_CORE")
