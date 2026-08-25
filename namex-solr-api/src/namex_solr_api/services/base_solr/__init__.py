@@ -75,7 +75,7 @@ class Solr:
         self.synonyms_url = "{url}/{core}/schema/analysis/synonyms"
         self.update_url = "{url}/{core}/update?commit=true&overwrite=true&wt=json"
         self.bulk_update_url = "{url}/{core}/update?overwrite=true&wt=json"
-        self.optimize_url = "{url}/{core}/update?optimize=true&maxSegments=1&waitFlush=true&wt=json"
+        self.optimize_url = "{url}/{core}/update?optimize=true&maxSegments=1&waitFlush=false&wt=json"
 
         if app:
             self.init_app(app)
@@ -182,11 +182,11 @@ class Solr:
         response = self.call_solr("POST", self.search_url, json_data=payload, leader=False)
         return response.json()
 
-    def optimize(self, timeout=1800):
-        """Run Solr optimize to merge all index segments into one."""
-        current_app.logger.info("Running Solr optimize (this may take several minutes)...")
-        resp = self.call_solr(method="GET", query=self.optimize_url, timeout=timeout)
-        current_app.logger.info("Solr optimize complete.")
+    def optimize(self):
+        """Trigger Solr optimize in the background (fire-and-forget)."""
+        current_app.logger.info("Triggering Solr optimize in background...")
+        resp = self.call_solr(method="GET", query=self.optimize_url)
+        current_app.logger.info("Solr optimize triggered.")
         return resp
 
     def reload_core(self):
