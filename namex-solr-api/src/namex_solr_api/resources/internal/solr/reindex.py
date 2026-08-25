@@ -82,6 +82,12 @@ def reindex_optimize_endpoint():
         current_app.logger.debug("Optimizing leader index to merge segments...")
         solr.optimize()
         return jsonify({"message": "Optimize completed successfully."}), HTTPStatus.OK
+    except SolrException as err:
+        if err.status_code == HTTPStatus.GATEWAY_TIMEOUT:
+            current_app.logger.warning("Optimize timed out — Solr is running it in background.")
+            return jsonify({"message": "Optimize triggered (running in background)."}), HTTPStatus.ACCEPTED
+        current_app.logger.exception("Optimize failed.")
+        return exception_response(err)
     except Exception as err:
         current_app.logger.exception("Optimize failed.")
         return exception_response(err)

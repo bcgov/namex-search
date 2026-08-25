@@ -185,7 +185,7 @@ class Solr:
     def optimize(self):
         """Trigger Solr optimize in the background (fire-and-forget)."""
         current_app.logger.info("Triggering Solr optimize in background...")
-        resp = self.call_solr(method="GET", query=self.optimize_url)
+        resp = self.call_solr(method="GET", query=self.optimize_url, timeout=10)
         current_app.logger.info("Solr optimize triggered.")
         return resp
 
