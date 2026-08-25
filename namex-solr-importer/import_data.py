@@ -258,10 +258,13 @@ def load_conflicts_core():
             )
 
         current_app.logger.debug("---------- Post Import Actions ----------")
-        try:
-            reindex_optimize()
-        except Exception as err:  # noqa: BLE001
-            current_app.logger.warning(f"Optimize request timed out — Solr may still be running it in background: {err}")
+        if current_app.config.get("ENABLE_OPTIMIZE", True):
+            try:
+                reindex_optimize()
+            except Exception as err:
+                current_app.logger.warning(f"Optimize request timed out — Solr may still be running it in background: {err}")
+        else:
+            current_app.logger.debug("Optimize disabled via config.")
         if is_reindex:
             reindex_post()
 
