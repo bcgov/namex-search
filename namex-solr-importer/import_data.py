@@ -258,7 +258,10 @@ def load_conflicts_core():
             )
 
         current_app.logger.debug("---------- Post Import Actions ----------")
-        reindex_optimize()
+        try:
+            reindex_optimize()
+        except Exception as err:  # noqa: BLE001
+            current_app.logger.warning(f"Optimize request timed out — Solr may still be running it in background: {err}")
         if is_reindex:
             reindex_post()
 
