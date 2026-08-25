@@ -71,6 +71,23 @@ def get_replication_detail(field: str, leader: bool):
 
 
 # -----------------------------
+# Optimize
+# -----------------------------
+@bp.post("/optimize")
+@cross_origin(origins="*")
+@jwt.requires_roles([User.Role.system.value])
+def reindex_optimize_endpoint():
+    """Run Solr optimize to merge all index segments into one."""
+    try:
+        current_app.logger.debug("Optimizing leader index to merge segments...")
+        solr.optimize()
+        return jsonify({"message": "Optimize completed successfully."}), HTTPStatus.OK
+    except Exception as err:
+        current_app.logger.exception("Optimize failed.")
+        return exception_response(err)
+
+
+# -----------------------------
 # Reindex Prep
 # -----------------------------
 @bp.post("/prep")

@@ -40,5 +40,5 @@ from .data_collection import (
     collect_synonyms_data,
 )
 from .data_parsing import parse_conflict, parse_synonyms
-from .reindex import reindex_post, reindex_prep, reindex_recovery
+from .reindex import reindex_optimize, reindex_post, reindex_prep, reindex_recovery
 from .solr_api import import_conflicts, resync, update_synonyms

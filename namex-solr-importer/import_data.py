@@ -51,6 +51,7 @@ from namex_solr_importer.utils import (
     import_conflicts,
     parse_conflict,
     parse_synonyms,
+    reindex_optimize,
     reindex_post,
     reindex_prep,
     reindex_recovery,
@@ -176,7 +177,7 @@ def _load_lear_corps():
     return count, final_record
 
 
-def load_conflicts_core():
+def load_conflicts_core():  # noqa: PLR0915
     """Load data from Synonyms, NameX, LEAR and COLIN into the conflicts core."""
     try:
         is_reindex = current_app.config.get("REINDEX_CORE")
@@ -256,8 +257,15 @@ def load_conflicts_core():
                 "Final commit failed. (This will only effect DEV)."
             )
 
+        current_app.logger.debug("---------- Post Import Actions ----------")
+        if current_app.config.get("ENABLE_OPTIMIZE", True):
+            try:
+                reindex_optimize()
+            except Exception as err:
+                current_app.logger.warning(f"Optimize request timed out — Solr may still be running it in background: {err}")
+        else:
+            current_app.logger.debug("Optimize disabled via config.")
         if is_reindex:
-            current_app.logger.debug("---------- Post Reindex Actions ----------")
             reindex_post()
 
         current_app.logger.debug("SOLR import finished successfully.")

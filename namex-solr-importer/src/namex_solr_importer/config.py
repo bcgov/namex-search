@@ -68,6 +68,7 @@ class Config:
 
     BATCH_SIZE = int(os.getenv("SOLR_BATCH_UPDATE_SIZE", "1000"))
     REINDEX_CORE = os.getenv("REINDEX_CORE", "False") == "True"
+    ENABLE_OPTIMIZE = os.getenv("ENABLE_OPTIMIZE", "True") == "True"
 
     MODERNIZED_LEGAL_TYPES = (
         os.getenv("MODERNIZED_LEGAL_TYPES", "BEN,CBEN,CP,GP,SP").upper().split(",")
