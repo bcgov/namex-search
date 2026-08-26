@@ -79,20 +79,7 @@ IMAGE_REPO="vm-repo"
 LEADER_HC_NAME="${APP}-solr-leader-hc-$ENV"
 FOLLOWER_HC_NAME="${APP}-solr-follower-hc-$ENV"
 
-SERVICE_ACCOUNT=$(gcloud iam service-accounts list \
-  --format="value(email)" \
-  --filter 'displayName="Default compute service account"' \
-  --project="$PROJECT_ID")
-
-## ============================================================
-##  ARTIFACT REGISTRY PERMISSIONS
-## ============================================================
-
-echo "➤ Adding artifact registry pull permissions..."
-
-gcloud projects add-iam-policy-binding "$ARTIFACT_REGISTRY_PROJECT" \
-  --member "serviceAccount:${SERVICE_ACCOUNT}" \
-  --role "roles/artifactregistry.serviceAgent"
+SERVICE_ACCOUNT="sa-solr-vm@${PROJECT_ID}.iam.gserviceaccount.com"
 
 ### ============================================================
 ###  ASSIGN INTERNAL STATIC IPs
