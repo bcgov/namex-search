@@ -59,7 +59,8 @@ def collect_colin_data():
                 when 'ACT' then 'ACTIVE'
                 when 'HIS' then 'HISTORICAL'
                 else 'ACTIVE'
-            END as state
+            END as state,
+            c.corp_typ_cd as sub_type
         FROM corporation c
         join corp_state cs on cs.corp_num = c.corp_num
         join corp_op_state cos on cos.state_typ_cd = cs.state_typ_cd
@@ -88,7 +89,8 @@ def collect_lear_data() -> CursorResult:
                 when NULL then j.country
                 when 'FEDERAL' then 'FD'
                 else j.region
-            END as jurisdiction
+            END as jurisdiction,
+            b.legal_type as sub_type
         FROM businesses b
         LEFT JOIN jurisdictions j on j.business_id = b.id
         WHERE legal_type in ({_get_stringified_list_for_sql("CONFLICT_LEGAL_TYPES")})
