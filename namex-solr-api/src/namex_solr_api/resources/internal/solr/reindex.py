@@ -83,7 +83,7 @@ def reindex_optimize_endpoint():
         solr.optimize()
         return jsonify({"message": "Optimize completed successfully."}), HTTPStatus.OK
     except Exception as err:
-        current_app.logger.exception("Optimize failed.")
+        current_app.logger.warning(f"Optimize request failed (may be running in background): {err}")
         return exception_response(err)
 
 
