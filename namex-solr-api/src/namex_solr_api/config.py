@@ -77,7 +77,10 @@ class Config:
     # Conflict match-prep skip tokens (NameX words_to_filter_from_name) plus the
     # previous Solr legal-designation fallback used by /nrs trailing strip.
     # Spaced entries are phrases (trailing strip only; token skip ignores them).
-    # vaults.gcp.env DESIGNATIONS is the space-separated token subset.
+    # Deployed Cloud Run injects DESIGNATIONS from 1Password via vaults.gcp.env
+    # (op://solr/$APP_ENV/namex-search/DESIGNATIONS). Env is space-separated
+    # tokens; this Python list is unioned in so skip words and phrases remain
+    # even if 1Password only has legal suffixes.
     # Ranking/boosts use the raw query and do not apply this list.
     NAMEX_FILTER_WORDS = [  # noqa: RUF012
         "an",
