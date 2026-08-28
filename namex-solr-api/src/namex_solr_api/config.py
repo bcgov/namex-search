@@ -74,34 +74,89 @@ class Config:
     # Used by /sync heartbeat
     LAST_REPLICATION_THRESHOLD = int(os.getenv("LAST_REPLICATION_THRESHOLD", "24"))  # hours
     
-    # Used for search parsing
-    DESIGNATIONS = os.getenv("DESIGNATIONS")
-    if not DESIGNATIONS:
-        DESIGNATIONS = [
-            "corp.",
-            "corporation",
-            "inc.",
-            "incorporated",
-            "incorporee",
-            "l.l.c.",
-            "limited",
-            "limited liability co.",
-            "limited liability company",
-            "limited liability PARTNERSHIP",
-            "limitee",
-            "llc",
-            "llp",
-            "ltd.",
-            "ltee",
-            "sencrl",
-            "societe a responsabilite limitee",
-            "societe en nom collectif a responsabilite limitee",
-            "srl",
-            "ulc",
-            "unlimited liability company",
-        ]
-    else:
-        DESIGNATIONS = DESIGNATIONS.lower().split()
+    # Conflict match-prep skip tokens (NameX words_to_filter_from_name) plus the
+    # previous Solr legal-designation fallback used by /nrs trailing strip.
+    # Spaced entries are phrases (trailing strip only; token skip ignores them).
+    # vaults.gcp.env DESIGNATIONS is the space-separated token subset.
+    # Ranking/boosts use the raw query and do not apply this list.
+    NAMEX_FILTER_WORDS = [  # noqa: RUF012
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "by",
+        "for",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "no",
+        "not",
+        "o",
+        "on",
+        "or",
+        "such",
+        "that",
+        "the",
+        "their",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "to",
+        "association",
+        "assoc",
+        "assoc.",
+        "assn",
+        "assn.",
+        "company",
+        "co",
+        "co.",
+        "corporation",
+        "corp",
+        "corp.",
+        "incorporated",
+        "inc",
+        "inc.",
+        "incorporee",
+        "liability",
+        "limited",
+        "ltd",
+        "ltd.",
+        "limitee",
+        "ltee",
+        "ltee.",
+        "society",
+        "soc",
+        "soc.",
+        "ulc",
+        "ulc.",
+        "unlimited",
+        # Previous Solr DESIGNATIONS fallback (unique items).
+        "l.l.c.",
+        "limited liability co.",
+        "limited liability company",
+        "limited liability partnership",
+        "llc",
+        "llp",
+        "sencrl",
+        "societe a responsabilite limitee",
+        "societe en nom collectif a responsabilite limitee",
+        "srl",
+        "unlimited liability company",
+    ]
+    # Env is space-separated so it cannot preserve phrases; always keep those
+    # from NAMEX_FILTER_WORDS. Union also keeps skip tokens if env is unset.
+    _designations_env = os.getenv("DESIGNATIONS")
+    DESIGNATIONS = list(dict.fromkeys(  # noqa: RUF012
+        ([token.lower() for token in _designations_env.split()] if _designations_env else [])
+        + [word.lower() for word in NAMEX_FILTER_WORDS]
+    ))
 
     # Cache stuff
     CACHE_TYPE = os.getenv("CACHE_TYPE", "FileSystemCache")
