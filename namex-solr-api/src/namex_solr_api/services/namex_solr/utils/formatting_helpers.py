@@ -76,6 +76,23 @@ def normalize_conflict_initials(query: str | None) -> str:
     return re.sub(r"\s+", " ", normalized).strip()
 
 
+def remove_designation_tokens(query: str, designations: list[str] | None = None) -> str:
+    """Remove DESIGNATIONS tokens anywhere in the query.
+
+    Match-prep equivalent of NameX words_to_filter_from_name(): drop skip words
+    (be, the, and, ...) and designation tokens (ltd, inc, ...) before AND-split.
+    Ranking/boosts must keep the raw query and should not call this.
+    """
+    if not query:
+        return ""
+
+    if designations is None:
+        designations = current_app.config.get("DESIGNATIONS") or []
+
+    skip = {str(token).lower() for token in designations}
+    return " ".join(token for token in query.split() if token.lower() not in skip)
+
+
 def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True, remove_designations = True) -> str:
     r"""Return the query string prepped for solr call.
 
@@ -94,8 +111,11 @@ def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True
         return ""
 
     if remove_designations and (designations := current_app.config.get("DESIGNATIONS")):
-        designation_rgx = fr'({"|".join(designations)})$'
-        query = re.sub(designation_rgx, r"", query.lower())
+        skip = {str(token).lower() for token in designations}
+        tokens = query.lower().split()
+        while tokens and tokens[-1] in skip:
+            tokens.pop()
+        query = " ".join(tokens)
 
     return prep_query_str(query, dash, replace_and)
 

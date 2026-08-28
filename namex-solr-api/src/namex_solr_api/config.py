@@ -40,6 +40,7 @@ Flask config, rather than reading environment variables directly
 or by accessing this configuration directly.
 """
 import os
+from typing import ClassVar
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -74,34 +75,71 @@ class Config:
     # Used by /sync heartbeat
     LAST_REPLICATION_THRESHOLD = int(os.getenv("LAST_REPLICATION_THRESHOLD", "24"))  # hours
     
-    # Used for search parsing
+    # Used for conflict match prep (AND terms). Must equal NameX
+    # words_to_filter_from_name() and devops/vaults.gcp.env DESIGNATIONS.
+    # Deployed Cloud Run gets this from vaults.gcp.env via op inject → env.
+    # Ranking/boosts use the raw query and do not apply this list.
+    NAMEX_FILTER_WORDS: ClassVar[list[str]] = [
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "by",
+        "for",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "no",
+        "not",
+        "o",
+        "on",
+        "or",
+        "such",
+        "that",
+        "the",
+        "their",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "to",
+        "association",
+        "assoc",
+        "assoc.",
+        "assn",
+        "assn.",
+        "company",
+        "co",
+        "co.",
+        "corporation",
+        "corp",
+        "corp.",
+        "incorporated",
+        "inc",
+        "inc.",
+        "incorporee",
+        "liability",
+        "limited",
+        "ltd",
+        "ltd.",
+        "limitee",
+        "ltee",
+        "ltee.",
+        "society",
+        "soc",
+        "soc.",
+        "ulc",
+        "ulc.",
+        "unlimited",
+    ]
     DESIGNATIONS = os.getenv("DESIGNATIONS")
-    if not DESIGNATIONS:
-        DESIGNATIONS = [
-            "corp.",
-            "corporation",
-            "inc.",
-            "incorporated",
-            "incorporee",
-            "l.l.c.",
-            "limited",
-            "limited liability co.",
-            "limited liability company",
-            "limited liability PARTNERSHIP",
-            "limitee",
-            "llc",
-            "llp",
-            "ltd.",
-            "ltee",
-            "sencrl",
-            "societe a responsabilite limitee",
-            "societe en nom collectif a responsabilite limitee",
-            "srl",
-            "ulc",
-            "unlimited liability company",
-        ]
-    else:
-        DESIGNATIONS = DESIGNATIONS.lower().split()
+    DESIGNATIONS = NAMEX_FILTER_WORDS if not DESIGNATIONS else DESIGNATIONS.lower().split()
 
     # Cache stuff
     CACHE_TYPE = os.getenv("CACHE_TYPE", "FileSystemCache")

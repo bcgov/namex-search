@@ -4,9 +4,17 @@ import inspect
 
 import pytest
 
+from namex_solr_api.config import Config
 from namex_solr_api.resources.v1 import search
 from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
-from namex_solr_api.services.namex_solr.utils.formatting_helpers import normalize_conflict_initials
+from namex_solr_api.services.namex_solr import NamexSolr
+from namex_solr_api.services.namex_solr.doc_models import NameField
+from namex_solr_api.services.namex_solr.utils.formatting_helpers import (
+    normalize_conflict_initials,
+    prep_query_str_namex,
+    remove_designation_tokens,
+)
+from namex_solr_api.services.namex_solr.utils.namex_search_helper import namex_search
 
 H_EQUIVALENTS = [
     "HH INVESTMENTS",
@@ -29,6 +37,12 @@ JM_EQUIVALENTS = [
 def conflict_terms(name: str) -> list[str]:
     """Mirror possible-conflict value prep: normalize initials, then existing prep/split."""
     return prep_query_str(normalize_conflict_initials(name), "replace").split()
+
+
+def conflict_match_terms(name: str) -> list[str]:
+    """Mirror conflict AND-term prep: initials, then DESIGNATIONS token skip."""
+    prepped = prep_query_str(normalize_conflict_initials(name), "replace")
+    return remove_designation_tokens(prepped, Config.NAMEX_FILTER_WORDS).split()
 
 
 @pytest.mark.parametrize("name", H_EQUIVALENTS)
@@ -69,15 +83,92 @@ def test_jmj_stays_three_initials():
 
 
 def test_possible_conflict_names_normalizes_before_prep():
-    """Normalizer must run on the conflict query path only; raw value stays for ranking."""
+    """Normalizer and DESIGNATIONS skip run on the conflict query path only; raw value stays for ranking."""
     source = inspect.getsource(search.possible_conflict_names)
     assert 'value = query_json.get("value")' in source
     assert 'prep_query_str_namex(normalize_conflict_initials(value), "replace")' in source
+    assert "remove_designation_tokens(" in source
     assert "get_name_search_full_query_boost(value)" in source
     assert "value = normalize_conflict_initials(" not in source
+    assert "value = remove_designation_tokens(" not in source
 
 
-def test_nrs_does_not_use_conflict_initials_normalizer():
-    """/nrs is out of scope for ticket 34730."""
+def test_nrs_does_not_use_conflict_match_prep():
+    """/nrs is out of scope for conflict skip-word and initials prep.
+
+    Token-anywhere DESIGNATIONS skip is only wrapped around possible_conflict_names.
+    /nrs still calls prep_query_str_namex(value) with remove_designations=True, which
+    only pops trailing tokens (ltd, inc, ...), not leading BE / THE / AND.
+    """
     source = inspect.getsource(search.nrs)
     assert "normalize_conflict_initials" not in source
+    assert "remove_designation_tokens" not in source
+    assert 'prep_query_str_namex(value)' in source
+    assert "full_query_boosts=[]" in source
+
+
+def test_nrs_keeps_leading_skip_words(app):
+    """NR search must still require BE / THE / AND when they are not the last token."""
+    with app.app_context():
+        assert prep_query_str_namex("be kind").split() == ["be", "kind"]
+        assert prep_query_str_namex("the holding").split() == ["the", "holding"]
+        assert "and" in prep_query_str_namex("jm and holding").split()
+        assert prep_query_str_namex("kind ltd").split() == ["kind"]
+
+
+def test_remove_designation_tokens_drops_be_from_match_prep():
+    """BE KIND match terms are KIND; the skipped word is still available for ranking."""
+    designations = ["be", "the", "and", "ltd", "ltd.", "o", "on"]
+    assert remove_designation_tokens("be kind", designations) == "kind"
+    assert remove_designation_tokens("be kind ltd.", designations) == "kind"
+    assert remove_designation_tokens("bekind", designations) == "bekind"
+    assert remove_designation_tokens("hello", designations) == "hello"
+
+
+def test_be_kind_keeps_kind_candidate_set_and_boosts_phrase():
+    """BE KIND still matches the broad KIND set; ranking OR-boosts the exact phrase.
+
+    Match prep drops BE, so AND terms equal a KIND-only search (KIND MIND, KIND
+    GOODIES, BE KIND CONTRACTING all remain eligible). Boosts keep raw 'be kind'
+    on name_q_exact so BE KIND names score above other KIND hits.
+    """
+    assert conflict_match_terms("be kind") == ["kind"]
+    assert conflict_match_terms("be kind") == conflict_match_terms("kind")
+    assert conflict_match_terms("be kind ltd") == ["kind"]
+
+    be_kind_boosts = NamexSolr.get_name_search_full_query_boost("be kind")
+    kind_boosts = NamexSolr.get_name_search_full_query_boost("kind")
+
+    be_kind_exact = next(item for item in be_kind_boosts if item["field"] == NameField.NAME_Q_EXACT)
+    kind_exact = next(item for item in kind_boosts if item["field"] == NameField.NAME_Q_EXACT)
+
+    assert be_kind_exact["value"] == "be kind"
+    assert be_kind_exact["boost"] == "3"
+    assert kind_exact["value"] == "kind"
+    assert be_kind_exact["value"] != kind_exact["value"]
+
+    helper_source = inspect.getsource(namex_search)
+    assert 'initial_queries["query"] += f\' OR ({info["field"].value}:"{info["value"]}"\'' in helper_source
+
+
+def test_boosts_keep_raw_be_kind():
+    """Ranking boosts must see the original phrase, not the skip-filtered match string."""
+    boosts = NamexSolr.get_name_search_full_query_boost("be kind")
+    boost_values = [item["value"] for item in boosts]
+    assert any("be kind" in value for value in boost_values)
+    assert all(value != "kind" for value in boost_values)
+
+
+def test_vaults_designations_match_config_namex_filter_words():
+    """Deployed DESIGNATIONS must be the same list as the config fallback (NameX skip words)."""
+    from pathlib import Path
+
+    from namex_solr_api.config import Config
+
+    vaults_path = Path(__file__).resolve().parents[2] / "devops" / "vaults.gcp.env"
+    designations_line = next(
+        line for line in vaults_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("DESIGNATIONS=")
+    )
+    vaults_words = designations_line.split("=", 1)[1].strip().strip('"').split()
+    assert vaults_words == Config.NAMEX_FILTER_WORDS

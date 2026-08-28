@@ -50,6 +50,7 @@ from namex_solr_api.services.namex_solr.utils import (
     normalize_conflict_initials,
     normalize_nr_num,
     prep_query_str_namex,
+    remove_designation_tokens,
 )
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
@@ -73,7 +74,9 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
         value = query_json.get("value")
         normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
-            "value": prep_query_str_namex(normalize_conflict_initials(value), "replace"),
+            "value": remove_designation_tokens(
+                prep_query_str_namex(normalize_conflict_initials(value), "replace")
+            ),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
             PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
