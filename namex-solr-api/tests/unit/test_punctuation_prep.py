@@ -69,10 +69,12 @@ def test_jmj_stays_three_initials():
 
 
 def test_possible_conflict_names_normalizes_before_prep():
-    """Normalizer must run on the conflict name value before prep / AND-split."""
+    """Normalizer must run on the conflict query path only; raw value stays for ranking."""
     source = inspect.getsource(search.possible_conflict_names)
-    assert "normalize_conflict_initials" in source
-    assert source.index("normalize_conflict_initials") < source.index("prep_query_str_namex(value, \"replace\")")
+    assert 'value = query_json.get("value")' in source
+    assert 'prep_query_str_namex(normalize_conflict_initials(value), "replace")' in source
+    assert "get_name_search_full_query_boost(value)" in source
+    assert "value = normalize_conflict_initials(" not in source
 
 
 def test_nrs_does_not_use_conflict_initials_normalizer():
