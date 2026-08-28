@@ -38,6 +38,43 @@ from flask import current_app
 
 from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
 
+# Punct/space between two single letters (H&H, H.H., H. & H.). Does not insert "and".
+_INITIAL_PUNCT = re.compile(
+    r"(?i)(?<![a-z])([a-z])(?:[\s]*[&./,!_\-'@+=]+[\s]*)+([a-z])\.?(?![a-z])"
+)
+_TWO_LETTER = re.compile(r"(?i)(?<![a-z])([a-z]{2})(?![a-z])")
+# Do not split 2-letter tokens that this repo already treats as whole words:
+# - 2-letter English stopwords from namex-solr/.../lang/stopwords_en.txt (includes "in")
+# - "bc" from possible.conflicts British Columbia fold and NameX _name_pre_processing
+_KEEP_TWO_LETTER = frozenset({
+    "an", "as", "at", "be", "by", "if", "in", "is", "it", "no", "of", "on", "or", "to",
+    "bc",
+})
+
+
+def normalize_conflict_initials(query: str | None) -> str:
+    """Normalize glued/punctuated initials to the spaced form GCP AND-split already handles.
+
+    Conflict path only. Runs before prep_query_str / QueryBuilder whitespace split.
+    """
+    if not query:
+        return ""
+
+    normalized = query
+    previous = None
+    while previous != normalized:
+        previous = normalized
+        normalized = _INITIAL_PUNCT.sub(r"\1 \2", normalized)
+
+    def split_glued_initials(match: re.Match) -> str:
+        token = match.group(1)
+        if token.lower() in _KEEP_TWO_LETTER:
+            return token
+        return f"{token[0]} {token[1]}"
+
+    normalized = _TWO_LETTER.sub(split_glued_initials, normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
 
 def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True, remove_designations = True) -> str:
     r"""Return the query string prepped for solr call.
