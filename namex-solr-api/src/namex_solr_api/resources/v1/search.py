@@ -70,10 +70,10 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
 
         # set base query params
         query_json: dict = request_json.get("query", {})
-        value = normalize_conflict_initials(query_json.get("value"))
+        value = query_json.get("value")
         normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
-            "value": prep_query_str_namex(value, "replace"),
+            "value": prep_query_str_namex(normalize_conflict_initials(value), "replace"),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
             PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
