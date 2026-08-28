@@ -37,6 +37,7 @@ from .formatting_helpers import (
     normalize_nr_num,
     prep_query_str_namex,
     remove_designation_tokens,
+    strip_trailing_designations,
 )
 from .namex_search_helper import namex_search
 from .synonym_helpers import get_synonyms

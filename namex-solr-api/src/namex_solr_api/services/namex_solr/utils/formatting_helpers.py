@@ -80,7 +80,8 @@ def remove_designation_tokens(query: str, designations: list[str] | None = None)
     """Remove DESIGNATIONS tokens anywhere in the query.
 
     Match-prep equivalent of NameX words_to_filter_from_name(): drop skip words
-    (be, the, and, ...) and designation tokens (ltd, inc, ...) before AND-split.
+    (be, the, and, ...) and designation tokens (ltd, inc, llc, ...) before AND-split.
+    Spaced phrases are ignored here; they are trailing-strip only.
     Ranking/boosts must keep the raw query and should not call this.
     """
     if not query:
@@ -89,8 +90,38 @@ def remove_designation_tokens(query: str, designations: list[str] | None = None)
     if designations is None:
         designations = current_app.config.get("DESIGNATIONS") or []
 
-    skip = {str(token).lower() for token in designations}
+    skip = {str(token).lower() for token in designations if token and " " not in str(token)}
     return " ".join(token for token in query.split() if token.lower() not in skip)
+
+
+def strip_trailing_designations(query: str, designations: list[str] | None = None) -> str:
+    """Strip trailing skip tokens and legal-designation phrases.
+
+    Longest match first so 'limited liability company' is removed as a phrase.
+    Repeats until nothing trailing matches (kind ltd inc → kind).
+    Requires a preceding space (or whole-string match) so skip tokens like
+    'o' / 'on' do not clip 'hello' / 'boston'.
+    """
+    if not query:
+        return ""
+
+    if designations is None:
+        designations = current_app.config.get("DESIGNATIONS") or []
+
+    query = query.lower().strip()
+    phrases = sorted({str(item).lower() for item in designations if item}, key=len, reverse=True)
+    changed = True
+    while query and changed:
+        changed = False
+        for phrase in phrases:
+            if query == phrase:
+                return ""
+            suffix = f" {phrase}"
+            if query.endswith(suffix):
+                query = query[: -len(suffix)].strip()
+                changed = True
+                break
+    return query
 
 
 def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True, remove_designations = True) -> str:
@@ -111,11 +142,7 @@ def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True
         return ""
 
     if remove_designations and (designations := current_app.config.get("DESIGNATIONS")):
-        skip = {str(token).lower() for token in designations}
-        tokens = query.lower().split()
-        while tokens and tokens[-1] in skip:
-            tokens.pop()
-        query = " ".join(tokens)
+        query = strip_trailing_designations(query, designations)
 
     return prep_query_str(query, dash, replace_and)
 

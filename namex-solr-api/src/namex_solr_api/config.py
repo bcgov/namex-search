@@ -40,7 +40,6 @@ Flask config, rather than reading environment variables directly
 or by accessing this configuration directly.
 """
 import os
-from typing import ClassVar
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -75,11 +74,12 @@ class Config:
     # Used by /sync heartbeat
     LAST_REPLICATION_THRESHOLD = int(os.getenv("LAST_REPLICATION_THRESHOLD", "24"))  # hours
     
-    # Used for conflict match prep (AND terms). Must equal NameX
-    # words_to_filter_from_name() and devops/vaults.gcp.env DESIGNATIONS.
-    # Deployed Cloud Run gets this from vaults.gcp.env via op inject → env.
+    # Conflict match-prep skip tokens (NameX words_to_filter_from_name) plus the
+    # previous Solr legal-designation fallback used by /nrs trailing strip.
+    # Spaced entries are phrases (trailing strip only; token skip ignores them).
+    # vaults.gcp.env DESIGNATIONS is the space-separated token subset.
     # Ranking/boosts use the raw query and do not apply this list.
-    NAMEX_FILTER_WORDS: ClassVar[list[str]] = [
+    NAMEX_FILTER_WORDS = [  # noqa: RUF012
         "an",
         "and",
         "are",
@@ -137,9 +137,26 @@ class Config:
         "ulc",
         "ulc.",
         "unlimited",
+        # Previous Solr DESIGNATIONS fallback (unique items).
+        "l.l.c.",
+        "limited liability co.",
+        "limited liability company",
+        "limited liability partnership",
+        "llc",
+        "llp",
+        "sencrl",
+        "societe a responsabilite limitee",
+        "societe en nom collectif a responsabilite limitee",
+        "srl",
+        "unlimited liability company",
     ]
-    DESIGNATIONS = os.getenv("DESIGNATIONS")
-    DESIGNATIONS = NAMEX_FILTER_WORDS if not DESIGNATIONS else DESIGNATIONS.lower().split()
+    # Env is space-separated so it cannot preserve phrases; always keep those
+    # from NAMEX_FILTER_WORDS. Union also keeps skip tokens if env is unset.
+    _designations_env = os.getenv("DESIGNATIONS")
+    DESIGNATIONS = list(dict.fromkeys(  # noqa: RUF012
+        ([token.lower() for token in _designations_env.split()] if _designations_env else [])
+        + [word.lower() for word in NAMEX_FILTER_WORDS]
+    ))
 
     # Cache stuff
     CACHE_TYPE = os.getenv("CACHE_TYPE", "FileSystemCache")

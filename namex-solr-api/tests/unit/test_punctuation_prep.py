@@ -13,6 +13,7 @@ from namex_solr_api.services.namex_solr.utils.formatting_helpers import (
     normalize_conflict_initials,
     prep_query_str_namex,
     remove_designation_tokens,
+    strip_trailing_designations,
 )
 from namex_solr_api.services.namex_solr.utils.namex_search_helper import namex_search
 
@@ -98,7 +99,8 @@ def test_nrs_does_not_use_conflict_match_prep():
 
     Token-anywhere DESIGNATIONS skip is only wrapped around possible_conflict_names.
     /nrs still calls prep_query_str_namex(value) with remove_designations=True, which
-    only pops trailing tokens (ltd, inc, ...), not leading BE / THE / AND.
+    only strips trailing designations (ltd, llc, limited liability company, ...),
+    not leading BE / THE / AND.
     """
     source = inspect.getsource(search.nrs)
     assert "normalize_conflict_initials" not in source
@@ -114,6 +116,8 @@ def test_nrs_keeps_leading_skip_words(app):
         assert prep_query_str_namex("the holding").split() == ["the", "holding"]
         assert "and" in prep_query_str_namex("jm and holding").split()
         assert prep_query_str_namex("kind ltd").split() == ["kind"]
+        assert prep_query_str_namex("kind llc").split() == ["kind"]
+        assert prep_query_str_namex("kind limited liability company").split() == ["kind"]
 
 
 def test_remove_designation_tokens_drops_be_from_match_prep():
@@ -159,8 +163,33 @@ def test_boosts_keep_raw_be_kind():
     assert all(value != "kind" for value in boost_values)
 
 
-def test_vaults_designations_match_config_namex_filter_words():
-    """Deployed DESIGNATIONS must be the same list as the config fallback (NameX skip words)."""
+def test_nrs_trailing_strip_keeps_legal_designations():
+    """/nrs trailing strip still removes the old Solr legal-designation fallback.
+
+    Multi-word phrases are stripped as a unit. Skip tokens like o/on must not
+    clip hello/boston. Conflict token skip must not treat French 'a' as a skip word.
+    """
+    designations = Config.NAMEX_FILTER_WORDS
+    assert strip_trailing_designations("foo limited liability company", designations) == "foo"
+    assert strip_trailing_designations("foo limited liability partnership", designations) == "foo"
+    assert strip_trailing_designations("foo unlimited liability company", designations) == "foo"
+    assert strip_trailing_designations("foo llc", designations) == "foo"
+    assert strip_trailing_designations("foo llp", designations) == "foo"
+    assert strip_trailing_designations("foo sencrl", designations) == "foo"
+    assert strip_trailing_designations("kind ltd inc", designations) == "kind"
+    assert strip_trailing_designations("hello", designations) == "hello"
+    assert strip_trailing_designations("boston", designations) == "boston"
+    assert strip_trailing_designations("be kind", designations) == "be kind"
+
+    assert remove_designation_tokens("a holding", designations) == "a holding"
+    assert remove_designation_tokens("foo llc", designations) == "foo"
+    assert "partnership" not in {
+        token for token in designations if " " not in token
+    }
+
+
+def test_vaults_designations_match_config_namex_filter_tokens():
+    """Deployed DESIGNATIONS is the space-separated token subset of NAMEX_FILTER_WORDS."""
     from pathlib import Path
 
     from namex_solr_api.config import Config
@@ -171,4 +200,4 @@ def test_vaults_designations_match_config_namex_filter_words():
         if line.startswith("DESIGNATIONS=")
     )
     vaults_words = designations_line.split("=", 1)[1].strip().strip('"').split()
-    assert vaults_words == Config.NAMEX_FILTER_WORDS
+    assert vaults_words == [word for word in Config.NAMEX_FILTER_WORDS if " " not in word]
