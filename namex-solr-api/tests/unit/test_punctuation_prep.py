@@ -188,16 +188,13 @@ def test_nrs_trailing_strip_keeps_legal_designations():
     }
 
 
-def test_vaults_designations_match_config_namex_filter_tokens():
-    """Deployed DESIGNATIONS is the space-separated token subset of NAMEX_FILTER_WORDS."""
+def test_vaults_designations_uses_onepassword_ref():
+    """Deployed DESIGNATIONS must be injected from 1Password like the other vaults lines."""
     from pathlib import Path
-
-    from namex_solr_api.config import Config
 
     vaults_path = Path(__file__).resolve().parents[2] / "devops" / "vaults.gcp.env"
     designations_line = next(
         line for line in vaults_path.read_text(encoding="utf-8").splitlines()
         if line.startswith("DESIGNATIONS=")
     )
-    vaults_words = designations_line.split("=", 1)[1].strip().strip('"').split()
-    assert vaults_words == [word for word in Config.NAMEX_FILTER_WORDS if " " not in word]
+    assert designations_line == 'DESIGNATIONS="op://solr/$APP_ENV/namex-search/DESIGNATIONS"'
