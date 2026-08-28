@@ -45,7 +45,12 @@ from namex_solr_api.models import SearchHistory, User
 from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
-from namex_solr_api.services.namex_solr.utils import namex_search, normalize_nr_num, prep_query_str_namex
+from namex_solr_api.services.namex_solr.utils import (
+    namex_search,
+    normalize_conflict_initials,
+    normalize_nr_num,
+    prep_query_str_namex,
+)
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
 
@@ -65,7 +70,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
 
         # set base query params
         query_json: dict = request_json.get("query", {})
-        value = query_json.get("value")
+        value = normalize_conflict_initials(query_json.get("value"))
         normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
             "value": prep_query_str_namex(value, "replace"),
