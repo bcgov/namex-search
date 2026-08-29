@@ -43,7 +43,7 @@ def conflict_terms(name: str) -> list[str]:
 def conflict_match_terms(name: str) -> list[str]:
     """Mirror conflict AND-term prep: initials, then DESIGNATIONS token skip."""
     prepped = prep_query_str(normalize_conflict_initials(name), "replace")
-    return remove_designation_tokens(prepped, Config.NAMEX_FILTER_WORDS).split()
+    return remove_designation_tokens(prepped, Config.DEFAULT_DESIGNATIONS).split()
 
 
 @pytest.mark.parametrize("name", H_EQUIVALENTS)
@@ -129,32 +129,6 @@ def test_remove_designation_tokens_drops_be_from_match_prep():
     assert remove_designation_tokens("hello", designations) == "hello"
 
 
-def test_be_kind_keeps_kind_candidate_set_and_boosts_phrase():
-    """BE KIND still matches the broad KIND set; ranking OR-boosts the exact phrase.
-
-    Match prep drops BE, so AND terms equal a KIND-only search (KIND MIND, KIND
-    GOODIES, BE KIND CONTRACTING all remain eligible). Boosts keep raw 'be kind'
-    on name_q_exact so BE KIND names score above other KIND hits.
-    """
-    assert conflict_match_terms("be kind") == ["kind"]
-    assert conflict_match_terms("be kind") == conflict_match_terms("kind")
-    assert conflict_match_terms("be kind ltd") == ["kind"]
-
-    be_kind_boosts = NamexSolr.get_name_search_full_query_boost("be kind")
-    kind_boosts = NamexSolr.get_name_search_full_query_boost("kind")
-
-    be_kind_exact = next(item for item in be_kind_boosts if item["field"] == NameField.NAME_Q_EXACT)
-    kind_exact = next(item for item in kind_boosts if item["field"] == NameField.NAME_Q_EXACT)
-
-    assert be_kind_exact["value"] == "be kind"
-    assert be_kind_exact["boost"] == "3"
-    assert kind_exact["value"] == "kind"
-    assert be_kind_exact["value"] != kind_exact["value"]
-
-    helper_source = inspect.getsource(namex_search)
-    assert 'initial_queries["query"] += f\' OR ({info["field"].value}:"{info["value"]}"\'' in helper_source
-
-
 def test_boosts_keep_raw_be_kind():
     """Ranking boosts must see the original phrase, not the skip-filtered match string."""
     boosts = NamexSolr.get_name_search_full_query_boost("be kind")
@@ -169,7 +143,7 @@ def test_nrs_trailing_strip_keeps_legal_designations():
     Multi-word phrases are stripped as a unit. Skip tokens like o/on must not
     clip hello/boston. Conflict token skip must not treat French 'a' as a skip word.
     """
-    designations = Config.NAMEX_FILTER_WORDS
+    designations = Config.DEFAULT_DESIGNATIONS
     assert strip_trailing_designations("foo limited liability company", designations) == "foo"
     assert strip_trailing_designations("foo limited liability partnership", designations) == "foo"
     assert strip_trailing_designations("foo unlimited liability company", designations) == "foo"

@@ -124,12 +124,10 @@ class Config:
         "srl",
         "unlimited liability company",
     ]
-    # Env is space-separated so it cannot preserve phrases; always keep those
-    # from NAMEX_FILTER_WORDS. Union also keeps skip tokens if env is unset.
-    _designations_env = os.getenv("DESIGNATIONS")
-    DESIGNATIONS = list(dict.fromkeys(  # noqa: RUF012
-        ([token.lower() for token in _designations_env.split()] if _designations_env else DEFAULT_DESIGNATIONS)
-    ))
+    # Env is space-separated so it cannot preserve phrases.
+    # FUTURE: Make it a comma separated list from the env
+    _designations_env = os.getenv("DESIGNATIONS", "")
+    DESIGNATIONS = _designations_env.split() if _designations_env else DEFAULT_DESIGNATIONS
 
     # Cache stuff
     CACHE_TYPE = os.getenv("CACHE_TYPE", "FileSystemCache")
