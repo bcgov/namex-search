@@ -99,14 +99,24 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             NameField.NAME_STATE: categories_json.get(NameField.NAME_STATE.value, conflict_name_states)
         }
 
+        strict = request_json.get("strict", False)
         start = request_json.get("start", solr.default_start)
         rows = request_json.get("rows", solr.default_rows)
+        try:
+            strict = bool(strict)
+        except (TypeError, ValueError):
+            strict = False
         try:
             start = int(start)
         except (TypeError, ValueError):
             start = solr.default_start
         try:
             rows = max(0, int(rows))
+            if not strict:
+                # TODO: return 400 if request is asking for too many rows - could mess up their paging
+                # temporary setting for testing so that non strict doesn't overload the non strict search
+                max_rows = current_app.config['SOLR_SVC_NAMEX_MAX_ROWS']
+                rows = min(max_rows, rows)
         except (TypeError, ValueError):
             rows = solr.default_rows
 
@@ -155,7 +165,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
         results = None
         solr_highlighting: dict[str, dict[str, list[str]]] = {}
         if rows <= max_highlighted_docs:
-            results = namex_search(params, solr, True)
+            results = namex_search(params, solr, True, strict)
             solr_highlighting = results.get("highlighting", {})
         else:
             # Run the main search without highlighting, then a smaller highlighted pass.
@@ -174,7 +184,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 query_synonym_fields=params.query_synonym_fields,
                 full_query_boosts=params.full_query_boosts,
                 exclude_sub_types=params.exclude_sub_types,
-            ), solr, True)
+            ), solr, True, strict)
 
             highlight_rows = min(rows, max_highlighted_docs)
             if highlight_rows > 0:
@@ -193,7 +203,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     query_synonym_fields=params.query_synonym_fields,
                     full_query_boosts=params.full_query_boosts,
                     exclude_sub_types=params.exclude_sub_types,
-                ), solr, True)
+                ), solr, True, strict)
                 solr_highlighting = highlight_results.get("highlighting", {})
         docs = []
         for result in results.get("response", {}).get("docs"):
@@ -304,6 +314,11 @@ def nrs():
 
         start = request_json.get("start", solr.default_start)
         rows = request_json.get("rows", solr.default_rows)
+        strict = request_json.get("strict", True)
+        try:
+            strict = bool(strict)
+        except (TypeError, ValueError):
+            strict = True
 
         params = QueryParams(
             query=query,
@@ -341,7 +356,7 @@ def nrs():
             exclude_sub_types=[]
         )
 
-        results = namex_search(params, solr, False)
+        results = namex_search(params, solr, False, strict)
         docs = results.get("response", {}).get("docs")
 
         response = {

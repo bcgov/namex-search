@@ -63,7 +63,8 @@ class Config:
     SOLR_SVC_NAMEX_FOLLOWER_CORE = os.getenv("SOLR_SVC_NAMEX_FOLLOWER_CORE", "name_request_follower")
     SOLR_SVC_NAMEX_LEADER_URL = os.getenv("SOLR_SVC_NAMEX_LEADER_URL", "http://localhost:8863/solr")
     SOLR_SVC_NAMEX_FOLLOWER_URL = os.getenv("SOLR_SVC_NAMEX_FOLLOWER_URL", "http://localhost:8863/solr")
-    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "10000"))
+    # TODO: return a 400 if a call exceeds this
+    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "50"))
     SOLR_SVC_NAMEX_TIMEOUT = int(os.getenv("SOLR_SVC_NAMEX_TIMEOUT", "60"))
     SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS = int(os.getenv("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", "50"))
 
