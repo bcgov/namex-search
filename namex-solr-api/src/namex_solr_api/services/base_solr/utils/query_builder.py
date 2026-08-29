@@ -192,7 +192,8 @@ class QueryBuilder:
                          boost_fields: dict[BaseEnum, int],
                          fuzzy_fields: dict[BaseEnum, dict[str, int]],
                          synonym_fields: dict[BaseEnum, str],
-                         is_child_search: bool) -> dict[str, list[str]]:
+                         is_child_search: bool,
+                         clause_bridge = "AND") -> dict[str, list[str]]:
         """Return a solr query with filters for each subsequent term."""
         terms = query["value"].split()
         synonym_info = {}
@@ -208,7 +209,7 @@ class QueryBuilder:
             term_clause = self.build_term_synonym_clauses(term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search, boost_fields)
 
             # Join the term clause to the full query
-            query_clause = self.join_clause(query_clause, f"({term_clause})", "AND")
+            query_clause = self.join_clause(query_clause, f"({term_clause})", clause_bridge)
 
         # Add extra filters if applicable
         filters = self.build_filter_clause(query, is_child_search)
