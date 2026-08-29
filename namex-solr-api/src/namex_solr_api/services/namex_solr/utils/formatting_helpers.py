@@ -48,7 +48,7 @@ _TWO_LETTER = re.compile(r"(?i)(?<![a-z])([a-z]{2})(?![a-z])")
 # - "bc" from possible.conflicts British Columbia fold and NameX _name_pre_processing
 _KEEP_TWO_LETTER = frozenset({
     "an", "as", "at", "be", "by", "if", "in", "is", "it", "no", "of", "on", "or", "to",
-    "bc",
+    "bc", "ca"
 })
 
 
