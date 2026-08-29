@@ -82,36 +82,7 @@ class Config:
     # tokens; this Python list is unioned in so skip words and phrases remain
     # even if 1Password only has legal suffixes.
     # Ranking/boosts use the raw query and do not apply this list.
-    NAMEX_FILTER_WORDS = [  # noqa: RUF012
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "but",
-        "by",
-        "for",
-        "if",
-        "in",
-        "into",
-        "is",
-        "it",
-        "no",
-        "not",
-        "o",
-        "on",
-        "or",
-        "such",
-        "that",
-        "the",
-        "their",
-        "then",
-        "there",
-        "these",
-        "they",
-        "this",
-        "to",
+    DEFAULT_DESIGNATIONS = [  # noqa: RUF012
         "association",
         "assoc",
         "assoc.",
@@ -157,8 +128,7 @@ class Config:
     # from NAMEX_FILTER_WORDS. Union also keeps skip tokens if env is unset.
     _designations_env = os.getenv("DESIGNATIONS")
     DESIGNATIONS = list(dict.fromkeys(  # noqa: RUF012
-        ([token.lower() for token in _designations_env.split()] if _designations_env else [])
-        + [word.lower() for word in NAMEX_FILTER_WORDS]
+        ([token.lower() for token in _designations_env.split()] if _designations_env else DEFAULT_DESIGNATIONS)
     ))
 
     # Cache stuff

@@ -50,7 +50,8 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
         boost_fields=params.query_boost_fields,
         fuzzy_fields=params.query_fuzzy_fields,
         synonym_fields=params.query_synonym_fields,
-        is_child_search=is_name_search)
+        is_child_search=is_name_search,
+        clause_bridge="OR")
 
     # boosts for term order result ordering
     for info in params.full_query_boosts:
