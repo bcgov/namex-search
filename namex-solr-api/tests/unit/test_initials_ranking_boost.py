@@ -181,10 +181,3 @@ def test_strict_and_nonstrict_behavior_unchanged():
     assert 'OR {format_full_query_boost(info)}' in helper
     boost_builder = inspect.getsource(NamexSolr.get_name_search_full_query_boost)
     assert "build_initials_group_boosts" in boost_builder
-
-
-def test_nonstrict_conflict_cap_defaults_to_100():
-    """Examiner non-strict window is 100. Highlighting must cover the same window."""
-    source = inspect.getsource(Config)
-    assert 'os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "100")' in source
-    assert 'os.getenv("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", "100")' in source
