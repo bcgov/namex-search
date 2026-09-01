@@ -64,9 +64,11 @@ class Config:
     SOLR_SVC_NAMEX_LEADER_URL = os.getenv("SOLR_SVC_NAMEX_LEADER_URL", "http://localhost:8863/solr")
     SOLR_SVC_NAMEX_FOLLOWER_URL = os.getenv("SOLR_SVC_NAMEX_FOLLOWER_URL", "http://localhost:8863/solr")
     # TODO: return a 400 if a call exceeds this
-    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "50"))
+    # Non-strict possible-conflicts cap. Keep in sync with MAX_HIGHLIGHTED_DOCS
+    # so the extra rows can still be classified into Examiner buckets.
+    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "100"))
     SOLR_SVC_NAMEX_TIMEOUT = int(os.getenv("SOLR_SVC_NAMEX_TIMEOUT", "60"))
-    SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS = int(os.getenv("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", "50"))
+    SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS = int(os.getenv("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", "100"))
 
     AUTH_SVC_URL = os.getenv("AUTH_API_URL", "") + os.getenv("AUTH_API_VERSION", "")
 
