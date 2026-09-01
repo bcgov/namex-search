@@ -33,6 +33,9 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """This module manages util methods for the NameX solr service."""
 from .formatting_helpers import (
+    INITIALS_GROUP_BOOST_WEIGHT,
+    build_initials_group_boosts,
+    conflict_match_prep_terms,
     normalize_conflict_initials,
     normalize_nr_num,
     prep_query_str_namex,

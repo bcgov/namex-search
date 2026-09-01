@@ -103,7 +103,17 @@ class NamexSolr(Solr):
 
     @staticmethod
     def get_name_search_full_query_boost(query_value: str):
-        """Return the list of full query boost information intended for business search."""
+        """Return the list of full query boost information intended for business search.
+
+        Phrase boosts use the raw query. The initials-group boost (if any) is
+        derived from conflict match-prep tokens and is an additional full-query
+        boost.
+        """
+        from namex_solr_api.services.namex_solr.utils.formatting_helpers import (
+            build_initials_group_boosts,
+            conflict_match_prep_terms,
+        )
+
         full_query_boosts = [
             {
                 "field": NameField.NAME_Q_EXACT,
@@ -156,4 +166,7 @@ class NamexSolr(Solr):
                     "fuzzy": "5"
                 }
             ]
+        full_query_boosts += build_initials_group_boosts(
+            conflict_match_prep_terms(query_value)
+        )
         return full_query_boosts
