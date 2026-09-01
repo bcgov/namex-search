@@ -66,9 +66,9 @@ class Config:
     # TODO: return a 400 if a call exceeds this
     # Non-strict possible-conflicts cap. Keep in sync with MAX_HIGHLIGHTED_DOCS
     # so the extra rows can still be classified into Examiner buckets.
-    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "100"))
+    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "200"))
     SOLR_SVC_NAMEX_TIMEOUT = int(os.getenv("SOLR_SVC_NAMEX_TIMEOUT", "60"))
-    SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS = int(os.getenv("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", "100"))
+    SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS = int(os.getenv("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", "200"))
 
     AUTH_SVC_URL = os.getenv("AUTH_API_URL", "") + os.getenv("AUTH_API_VERSION", "")
 
