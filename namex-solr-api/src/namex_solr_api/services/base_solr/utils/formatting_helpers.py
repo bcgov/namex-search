@@ -70,7 +70,7 @@ def prep_query_str(query: str, dash: str | None = None, replace_and = True) -> s
     rmv_doubles = r"([&+]){2,}"
     rmv_all = r"([()^{}|\\])"
     esc_begin = r"(^|\s)([+\-/!])"
-    esc_all = r'([:~<>?\"\[\]])'
+    esc_all = r'([:~<>?\"\[\]*])'
     special_and = r"([&+])"
     rmv_dash = r"(-)"
     pad_dash = r"(\S)(-)(\S)"
