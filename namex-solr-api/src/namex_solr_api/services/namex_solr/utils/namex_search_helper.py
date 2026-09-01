@@ -41,6 +41,22 @@ from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from .add_category_filters import add_category_filters
 
 
+def format_full_query_boost(info: dict) -> str:
+    """Render one full-query boost clause.
+
+    Existing items use field/value(/fuzzy). Initials-group items use field/values.
+    """
+    field = info["field"].value
+    boost = info["boost"]
+    if values := info.get("values"):
+        inner = " AND ".join(f"{field}:{token}" for token in values)
+        return f"(({inner})^{boost})"
+    clause = f'{field}:"{info["value"]}"'
+    if fuzzy := info.get("fuzzy"):
+        clause += f"~{fuzzy}"
+    return f"({clause}^{boost})"
+
+
 def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
     """Return the list of possible conflicts from Solr that match the query."""
     # initialize payload with base doc query (init query / filter)
@@ -55,11 +71,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_
 
     # boosts for term order result ordering
     for info in params.full_query_boosts:
-        initial_queries["query"] += f' OR ({info["field"].value}:"{info["value"]}"'
-        if fuzzy := info.get("fuzzy"):
-            initial_queries["query"] += f'~{fuzzy}^{info["boost"]})'
-        else:
-            initial_queries["query"] += f'^{info["boost"]})'
+        initial_queries["query"] += f" OR {format_full_query_boost(info)}"
 
     # add defaults
     parent_field = NameField.PARENT_TYPE.value if is_name_search else PCField.TYPE.value

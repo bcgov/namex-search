@@ -132,9 +132,10 @@ def test_remove_designation_tokens_drops_be_from_match_prep():
 def test_boosts_keep_raw_be_kind():
     """Ranking boosts must see the original phrase, not the skip-filtered match string."""
     boosts = NamexSolr.get_name_search_full_query_boost("be kind")
-    boost_values = [item["value"] for item in boosts]
+    boost_values = [item["value"] for item in boosts if "value" in item]
     assert any("be kind" in value for value in boost_values)
     assert all(value != "kind" for value in boost_values)
+    assert not any(item.get("values") for item in boosts)
 
 
 def test_nrs_trailing_strip_keeps_legal_designations():

@@ -147,6 +147,62 @@ def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True
     return prep_query_str(query, dash, replace_and)
 
 
+# Outranks scattered single-letter OR coordination from the base query.
+INITIALS_GROUP_BOOST_WEIGHT = "80"
+
+
+def _designations_for_match_prep() -> list[str]:
+    """Use the request app list when present; otherwise DEFAULT_DESIGNATIONS."""
+    from flask import has_app_context
+
+    if has_app_context() and (designations := current_app.config.get("DESIGNATIONS")):
+        return designations
+    from namex_solr_api.config import Config
+    return list(Config.DEFAULT_DESIGNATIONS)
+
+
+def conflict_match_prep_terms(query_value: str, designations: list[str] | None = None) -> list[str]:
+    """Token list used by possible-conflict match prep (not raw ranking boosts)."""
+    if designations is None:
+        designations = _designations_for_match_prep()
+    normalized = normalize_conflict_initials(query_value)
+    prepared = strip_trailing_designations(prep_query_str(normalized, "replace"), designations)
+    return remove_designation_tokens(prepared, designations).split()
+
+
+def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> list[dict]:
+    """All maximal 2+ single-letter runs AND all length>1 terms.
+
+    Additional full-query boost; appended beside existing phrase boosts.
+    """
+    if boost is None:
+        boost = INITIALS_GROUP_BOOST_WEIGHT
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    runs: list[str] = []
+    i = 0
+    while i < len(terms):
+        if len(terms[i]) == 1 and terms[i].isalpha():
+            j = i + 1
+            while j < len(terms) and len(terms[j]) == 1 and terms[j].isalpha():
+                j += 1
+            if j - i >= 2:  # noqa: PLR2004
+                runs.append("".join(terms[i:j]))
+            i = j
+        else:
+            i += 1
+    rest = [token for token in terms if len(token) > 1]
+    if not runs or not rest:
+        return []
+    return [
+        {
+            "field": NameField.NAME_Q,
+            "values": [*runs, *rest],
+            "boost": boost,
+        }
+    ]
+
+
 def normalize_nr_num(value: str | None) -> str | None:
     """Normalize an NR number to a canonical no-whitespace format."""
     if value is None:
