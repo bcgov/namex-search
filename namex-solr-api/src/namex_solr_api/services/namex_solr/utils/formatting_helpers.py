@@ -43,6 +43,11 @@ from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_quer
 _INITIAL_PUNCT = re.compile(
     r"(?i)(?<![a-z])([a-z])(?:[\s]*[&./,!_\-'@+=]+[\s]*)+([a-z])\.?(?![a-z])"
 )
+# Pairwise loop cannot consume the last initial's period when a space (or end of
+# string) follows: "j. r. m. investments" → "j r m. investments".
+_DANGLING_INITIAL_DOT = re.compile(r"(?i)(?<![a-z])([a-z])\.(?![a-z])")
+# Same leftover when the period is glued to the next word: "j r m.investments".
+_INITIAL_DOT_WORD = re.compile(r"(?i)(?<![a-z])([a-z])\.([a-z]{2,})")
 _TWO_LETTER = re.compile(r"(?i)(?<![a-z])([a-z]{2})(?![a-z])")
 # Do not split 2-letter tokens that this repo already treats as whole words:
 # - 2-letter English stopwords from namex-solr/.../lang/stopwords_en.txt (includes "in")
@@ -66,6 +71,9 @@ def normalize_conflict_initials(query: str | None) -> str:
     while previous != normalized:
         previous = normalized
         normalized = _INITIAL_PUNCT.sub(r"\1 \2", normalized)
+
+    normalized = _DANGLING_INITIAL_DOT.sub(r"\1 ", normalized)
+    normalized = _INITIAL_DOT_WORD.sub(r"\1 \2", normalized)
 
     def split_glued_initials(match: re.Match) -> str:
         token = match.group(1)
