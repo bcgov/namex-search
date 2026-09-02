@@ -46,9 +46,12 @@ from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import (
+    apply_conflict_wildcard_boosts,
+    apply_leading_wildcard_rank,
     namex_search,
     normalize_conflict_initials,
     normalize_nr_num,
+    parse_conflict_wildcard,
     prep_query_str_namex,
     remove_designation_tokens,
 )
@@ -72,6 +75,8 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
         # set base query params
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
+        wildcard = parse_conflict_wildcard(value)
+        value = wildcard.value
         normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
             "value": remove_designation_tokens(
@@ -157,7 +162,10 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
-            full_query_boosts=solr.get_name_search_full_query_boost(value),
+            full_query_boosts=apply_conflict_wildcard_boosts(
+                solr.get_name_search_full_query_boost(value),
+                wildcard.leading,
+            ),
             # TODO: add this as LD flag ? names ticket: #32885
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
         )
@@ -243,6 +251,8 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     "synonyms": list(set(synonym_highlights))
                 }
             })
+        if wildcard.leading and not wildcard.trailing and start == 0:
+            docs = apply_leading_wildcard_rank(docs, value)
         # save search in the db
         SearchHistory(
             query=request_json,
