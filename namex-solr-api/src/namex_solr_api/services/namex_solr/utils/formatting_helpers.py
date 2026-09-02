@@ -33,6 +33,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """Solr formatting functions."""
 import re
+from dataclasses import dataclass
 
 from flask import current_app
 
@@ -247,3 +248,74 @@ def normalize_nr_num(value: str | None) -> str | None:
     if value is None:
         return None
     return "".join(value.split())
+
+
+@dataclass(frozen=True)
+class ConflictWildcard:
+    """Leading/trailing * flags for examiner conflict search.
+
+    value is the star-stripped query used for match-prep and ranking boosts.
+    It is still the raw name (skip words stay) — only outer * is removed.
+    """
+
+    value: str
+    leading: bool
+    trailing: bool
+
+
+_NAME_TOKEN = re.compile(r"[a-z0-9]+")
+
+
+def parse_conflict_wildcard(query: str | None) -> ConflictWildcard:
+    """Detect a leading and/or trailing * on the whole examiner query.
+
+    Internal stars (WEST FOR* TIMBER) are left unchanged. A query that is
+    only * is not treated as a positional operator.
+    """
+    if not query:
+        return ConflictWildcard("", False, False)
+
+    raw = query.strip()
+    if not raw or not raw.replace("*", "").strip():
+        return ConflictWildcard(raw, False, False)
+
+    leading = raw.startswith("*")
+    trailing = raw.endswith("*")
+    cleaned = raw.strip("*").strip() if leading or trailing else raw
+    if not cleaned:
+        return ConflictWildcard(raw, False, False)
+    return ConflictWildcard(cleaned, leading, trailing)
+
+
+def apply_conflict_wildcard_boosts(boosts: list[dict], leading: bool) -> list[dict]:
+    """Drop the name_q_exact prefix boost when the query has a leading *."""
+    if not leading:
+        return list(boosts)
+
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    return [item for item in boosts if item.get("field") != NameField.NAME_Q_EXACT]
+
+
+def leading_wildcard_sort_key(name: str, query: str) -> int:
+    """0 = query term is preceded by other words/characters; 1 = starts with term."""
+    tokens = _NAME_TOKEN.findall((name or "").lower())
+    terms = (query or "").lower().split()
+    if not tokens or not terms:
+        return 1
+
+    term = terms[0]
+    for index, token in enumerate(tokens):
+        if token == term or token.startswith(term):
+            return 0 if index > 0 else 1
+        if term in token:
+            return 0
+    return 1
+
+
+def apply_leading_wildcard_rank(docs: list[dict], query: str) -> list[dict]:
+    """Stable-promote names where the first query term is not the first token.
+
+    Does not drop documents. Only used for leading-only *TERM on start=0.
+    """
+    return sorted(docs, key=lambda doc: leading_wildcard_sort_key(doc.get("name") or "", query))
