@@ -181,3 +181,4 @@ def test_strict_and_nonstrict_behavior_unchanged():
     assert 'OR {format_full_query_boost(info)}' in helper
     boost_builder = inspect.getsource(NamexSolr.get_name_search_full_query_boost)
     assert "build_initials_group_boosts" in boost_builder
+    assert "build_distinctive_coverage_boosts" in boost_builder

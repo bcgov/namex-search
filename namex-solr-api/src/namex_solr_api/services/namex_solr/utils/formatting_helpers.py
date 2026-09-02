@@ -149,6 +149,10 @@ def prep_query_str_namex(query: str, dash: str | None = None, replace_and = True
 
 # Outranks scattered single-letter OR coordination from the base query.
 INITIALS_GROUP_BOOST_WEIGHT = "80"
+# Outranks exact-first-word + synonym-only second-word (ltd ≈ holdings).
+DISTINCTIVE_COVERAGE_BOOST_WEIGHT = "80"
+# Matches QueryBuilder's fuzzy floor; excludes initials and stop-like tokens.
+_DISTINCTIVE_MIN_TERM_LEN = 4
 
 
 def _designations_for_match_prep() -> list[str]:
@@ -198,6 +202,41 @@ def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> l
         {
             "field": NameField.NAME_Q,
             "values": [*runs, *rest],
+            "boost": boost,
+        }
+    ]
+
+
+def _distinctive_term_clause(term: str) -> str:
+    """Return the coverage clause for one term, using the base query's fuzzy widths."""
+    from namex_solr_api.services.base_solr.utils.query_builder import QueryBuilder
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    parts = [
+        f"{NameField.NAME_Q.value}:{term}",
+        f"{NameField.NAME_Q_PHON_EN.value}:{term}",
+    ]
+    if fuzzy := QueryBuilder.get_fuzzy_str(term, 1, 2):
+        parts.append(f"{NameField.NAME_Q.value}:{term}{fuzzy}")
+    return f"({' OR '.join(parts)})"
+
+
+def build_distinctive_coverage_boosts(
+    terms: list[str], boost: str | None = None
+) -> list[dict]:
+    """Raise names that cover every distinctive term.
+
+    Coverage is exact, phonetic or fuzzy per term; designation synonyms
+    (ltd ≈ holdings) do not count.
+    """
+    distinctive = [term for term in terms if len(term) >= _DISTINCTIVE_MIN_TERM_LEN]
+    if len(distinctive) < 2:  # noqa: PLR2004
+        return []
+    if boost is None:
+        boost = DISTINCTIVE_COVERAGE_BOOST_WEIGHT
+    return [
+        {
+            "term_clauses": [_distinctive_term_clause(term) for term in distinctive],
             "boost": boost,
         }
     ]

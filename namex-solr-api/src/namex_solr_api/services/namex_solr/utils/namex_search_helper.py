@@ -44,10 +44,14 @@ from .add_category_filters import add_category_filters
 def format_full_query_boost(info: dict) -> str:
     """Render one full-query boost clause.
 
-    Existing items use field/value(/fuzzy). Initials-group items use field/values.
+    Accepts three shapes: term_clauses (AND of pre-built clauses), values
+    (AND of field:token), or value with an optional fuzzy width.
     """
-    field = info["field"].value
     boost = info["boost"]
+    if term_clauses := info.get("term_clauses"):
+        inner = " AND ".join(term_clauses)
+        return f"(({inner})^{boost})"
+    field = info["field"].value
     if values := info.get("values"):
         inner = " AND ".join(f"{field}:{token}" for token in values)
         return f"(({inner})^{boost})"
