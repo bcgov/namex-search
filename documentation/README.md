@@ -1,6 +1,6 @@
 # SOLR Infrastructure Deployment Script
 
-This repository contains Bash scripts to automate the deployment and management of a SOLR cluster in Google Cloud Platform (GCP) using a leader/follower architecture. The scripts are intentionally split into three responsibilities.
+This repository contains Bash scripts to automate the deployment and management of a SOLR cluster in Google Cloud Platform (GCP) using a leader/follower architecture. The scripts are intentionally split into responsibilities.
 
 [Figma diagram](https://www.figma.com/board/nEjO2J7H63bFBgP2TKmjM0/Firebase-Infra?node-id=0-1&p=f&t=f41Xb5kWQbtkcSFH-0)
 
@@ -10,6 +10,7 @@ This repository contains Bash scripts to automate the deployment and management 
 |------|--------|------------|
 | `gcp-solr-infra.sh` | One-time infrastructure setup | New environment or major infra change / Infrastructure bootstrap |
 | `update-solr-base-image.sh` | Create new VM templates with updated COS image | OS / security updates for base image (OS) |
+| `new-template.sh` | Full rebuild: delete VMs, recreate templates + VMs | Dev/test environments where a clean rebuild is acceptable |
 | `deploy-solr.sh` | Deploy Solr + rotate VMs | App changes or after base image update |
 
 > ⚠️ **Important:**
@@ -52,6 +53,7 @@ it is important to run this from 1 level higher as the script references locatio
 - The script is fragile and may fail if resources are missing or already exist.
 - You may need to set up the service account permissions for common project artifact registry manually.
 - Zone-specific resource availability may block VM creation; you may need to wait for the resources to become available.
+- VM templates enforce **Secure Boot** and **block project-wide SSH keys**. These must be enabled manually on existing VMs via the GCP console if not using the templates.
 
 ## Leader/Follower SOLR Replication
 
@@ -174,6 +176,7 @@ chmod +x deploy-solr.sh
 ./documentation/deploy-solr.sh build                                  # DEV only: build & push images
 ./documentation/deploy-solr.sh tag                                    # Promote images from SOURCE_TAG → ENV
 ./documentation/deploy-solr.sh deploy                                 # Blue-green VM rotation
+./documentation/deploy-solr.sh deploy-follower                        # Deploy follower only (TEST/PROD)
 ./documentation/deploy-solr.sh deploy --leader-machine-type=e2-standard-4   # Override leader machine type
 ./documentation/deploy-solr.sh deploy --follower-machine-type=e2-standard-4 # Override follower machine type
 ```
@@ -189,6 +192,14 @@ chmod +x deploy-solr.sh
 7. **Configures replication** — SSHs into follower via IAP tunnel and sets `solr.leaderUrl` to the new leader's internal IP.
 8. **Swaps follower backend** — same health-check-then-swap as leader.
 9. **Cleans up old VMs** — deletes old leader and follower VMs only after full success.
+
+### What `deploy-follower` does
+
+1. **Resolves leader IP** — finds the current leader VM and reads its internal IP (read-only, no leader disruption).
+2. **Creates a new follower VM** — from the follower instance template with zone failover.
+3. **Configures replication** — SSHs into follower via IAP tunnel and sets `solr.leaderUrl` to the current leader's IP.
+4. **Swaps follower backend** — adds new follower to instance group + backend, waits for health check, then removes old follower.
+5. **Cleans up old follower** — deletes the old follower VM after successful swap.
 
 ### Machine type overrides
 

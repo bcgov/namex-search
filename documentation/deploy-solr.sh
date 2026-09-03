@@ -6,7 +6,7 @@ set -o errtrace  # ensure ERR traps fire inside functions/subshells
 # CONFIGURATION
 ########################################
 
-ENV="dev"   # dev / test / prod
+ENV="prod"   # dev / test / prod
 SOURCE_TAG="dev"
 
 PROJECT="a083gt"
@@ -521,6 +521,129 @@ deploy_instances() {
 }
 
 ########################################
+# DEPLOY FOLLOWER ONLY (TEST/PROD)
+########################################
+
+deploy_follower_instance() {
+
+    timestamp=$(date -u +"%Y-%m-%d--%H%M%S")
+    NEW_FOLLOWER_VM="namex-solr-follower-${ENV}-${timestamp}"
+
+    #####################################
+    # RESOLVE LEADER INTERNAL IP (read-only)
+    #####################################
+
+    log "Finding current leader VM…"
+    CURRENT_LEADER_VM=$(gcloud compute instances list \
+        --format="value(name)" \
+        --filter="name~'^namex-solr-leader-${ENV}-'" \
+        --sort-by="~creationTimestamp" \
+        --limit=1 \
+        --project="${PROJECT_ID}" || true)
+
+    if [[ -z "${CURRENT_LEADER_VM}" ]]; then
+        echo "ERROR: No leader VM found for ${ENV}. Cannot deploy follower."
+        exit 1
+    fi
+
+    CURRENT_LEADER_ZONE=$(get_instance_zone "${CURRENT_LEADER_VM}")
+    CURRENT_LEADER_IP=$(gcloud compute instances describe "${CURRENT_LEADER_VM}" \
+        --zone "${CURRENT_LEADER_ZONE}" --project "${PROJECT_ID}" \
+        --format='value(networkInterfaces[0].networkIP)')
+
+    log "Leader: ${CURRENT_LEADER_VM} (${CURRENT_LEADER_ZONE}) — IP: ${CURRENT_LEADER_IP}"
+
+    #####################################
+    # FIND OLD FOLLOWER
+    #####################################
+
+    log "Finding current follower VM…"
+    OLD_FOLLOWER_VM=$(gcloud compute instances list \
+        --format="value(name)" \
+        --filter="name~'^namex-solr-follower-${ENV}-'" \
+        --sort-by="~creationTimestamp" \
+        --limit=1 \
+        --project="${PROJECT_ID}" || true)
+
+    OLD_FOLLOWER_ZONE=""
+    if [[ -n "${OLD_FOLLOWER_VM}" ]]; then
+        OLD_FOLLOWER_ZONE=$(get_instance_zone "${OLD_FOLLOWER_VM}")
+    fi
+
+    log "OLD_FOLLOWER_VM=${OLD_FOLLOWER_VM:-none}"
+
+    #####################################
+    # CREATE NEW FOLLOWER
+    #####################################
+
+    log "Creating NEW Follower VM: ${NEW_FOLLOWER_VM}"
+    FOLLOWER_ZONE=$(create_vm_in_available_zone "${NEW_FOLLOWER_VM}" "${FOLLOWER_TEMPLATE}" "${FOLLOWER_MACHINE_TYPE}")
+    log "Follower created in zone: ${FOLLOWER_ZONE}"
+
+    # Wait for follower Solr core before configuring replication
+    wait_for_solr_ready "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "name_request_follower"
+
+    log "Setting follower replication properties…"
+    retry 5 gcloud compute ssh "${NEW_FOLLOWER_VM}" \
+      --zone="${FOLLOWER_ZONE}" --project="${PROJECT_ID}" \
+      --tunnel-through-iap \
+      --command="curl -sf -X POST -H 'Content-type: application/json' \
+        -d '{\"set-user-property\":{\"solr.leaderUrl\": \"http://${CURRENT_LEADER_IP}:8983/solr/name_request\"}}' \
+        'http://localhost:8983/solr/name_request_follower/config/requestHandler?componentName=/replication'"
+
+    #####################################
+    # SWAP INSTANCE GROUP + BACKEND
+    #####################################
+
+    FOLLOWER_ZONE_SUFFIX=$(basename "${FOLLOWER_ZONE}" | grep -o '[a-c]$')
+    NEW_FOLLOWER_GRP="namex-solr-follower-grp-${ENV}-${FOLLOWER_ZONE_SUFFIX}"
+    OLD_FOLLOWER_GRP=""
+    if [[ -n "${OLD_FOLLOWER_ZONE}" ]]; then
+        OLD_FOLLOWER_ZONE_SUFFIX=$(basename "${OLD_FOLLOWER_ZONE}" | grep -o '[a-c]$')
+        OLD_FOLLOWER_GRP="namex-solr-follower-grp-${ENV}-${OLD_FOLLOWER_ZONE_SUFFIX}"
+    fi
+
+    log "Adding follower to instance group ${NEW_FOLLOWER_GRP}…"
+    ensure_instance_group "${NEW_FOLLOWER_GRP}" "${FOLLOWER_ZONE}"
+    gcloud compute instance-groups unmanaged add-instances \
+        "${NEW_FOLLOWER_GRP}" \
+        --zone "${FOLLOWER_ZONE}" \
+        --instances "${NEW_FOLLOWER_VM}" \
+        --project "${PROJECT_ID}"
+
+    add_to_backend "${FOLLOWER_BACKEND}" "${NEW_FOLLOWER_GRP}" "${FOLLOWER_ZONE}"
+
+    if ! wait_for_healthy_backend "${FOLLOWER_BACKEND}" "${NEW_FOLLOWER_VM}"; then
+        rollback_backend "${FOLLOWER_BACKEND}" "${NEW_FOLLOWER_GRP}" "${FOLLOWER_ZONE}"
+        log "Cleaning up failed follower VM: ${NEW_FOLLOWER_VM}"
+        gcloud compute instances delete "${NEW_FOLLOWER_VM}" --zone="${FOLLOWER_ZONE}" --project="${PROJECT_ID}" --quiet 2>/dev/null || true
+        exit 1
+    fi
+
+    remove_old_backend "${FOLLOWER_BACKEND}" \
+        "${NEW_FOLLOWER_GRP}" "${FOLLOWER_ZONE}" "${OLD_FOLLOWER_GRP}" "${OLD_FOLLOWER_ZONE}"
+
+    # Same-zone case: old VM still in shared IG → remove it
+    if [[ -n "${OLD_FOLLOWER_VM}" && "${OLD_FOLLOWER_GRP}" == "${NEW_FOLLOWER_GRP}" ]]; then
+        log "Removing old follower ${OLD_FOLLOWER_VM} from shared instance group ${NEW_FOLLOWER_GRP}…"
+        gcloud compute instance-groups unmanaged remove-instances "${NEW_FOLLOWER_GRP}" \
+            --zone="${FOLLOWER_ZONE}" --instances="${OLD_FOLLOWER_VM}" \
+            --project="${PROJECT_ID}" 2>/dev/null || true
+    fi
+
+    #####################################
+    # CLEANUP OLD FOLLOWER
+    #####################################
+
+    if [[ -n "${OLD_FOLLOWER_VM}" ]]; then
+        log "Deleting OLD follower: ${OLD_FOLLOWER_VM} (zone: ${OLD_FOLLOWER_ZONE})"
+        gcloud compute instances delete "${OLD_FOLLOWER_VM}" --zone="${OLD_FOLLOWER_ZONE}" --project="${PROJECT_ID}" --quiet
+    fi
+
+    log "Follower deployment complete."
+}
+
+########################################
 # PARSE FLAGS
 ########################################
 ACTION="${1:-}"
@@ -571,15 +694,20 @@ case "${ACTION}" in
         check_deploy_prereqs
         deploy_instances
         ;;
+    deploy-follower)
+        check_prereqs
+        deploy_follower_instance
+        ;;
     *)
         echo "Usage:"
-        echo "  $0 build     # DEV: Build & push leader image only"
-        echo "  $0 tag       # Tag images for TEST/PROD"
-        echo "  $0 deploy    # Deploy leader only (DEV) or leader+follower (TEST/PROD)"
+        echo "  $0 build             # DEV: Build & push leader image only"
+        echo "  $0 tag               # Tag images for TEST/PROD"
+        echo "  $0 deploy            # Deploy leader only (DEV) or leader+follower (TEST/PROD)"
+        echo "  $0 deploy-follower   # Deploy follower only (TEST/PROD)"
         echo ""
-        echo "  Options (deploy only):"
+        echo "  Options (deploy / deploy-follower):"
         echo "    --leader-machine-type <type>    Override leader machine type (e.g., e2-standard-4)"
-        echo "    --follower-machine-type <type>  Override follower machine type (e.g., e2-highcpu-8)"
+        echo "    --follower-machine-type <type>  Override follower machine type (e.g., e2-standard-4)"
         exit 1
         ;;
 esac
