@@ -68,10 +68,17 @@ class Config:
 
     BATCH_SIZE = int(os.getenv("SOLR_BATCH_UPDATE_SIZE", "1000"))
     REINDEX_CORE = os.getenv("REINDEX_CORE", "False") == "True"
+    ENABLE_OPTIMIZE = os.getenv("ENABLE_OPTIMIZE", "True") == "True"
 
-    MODERNIZED_LEGAL_TYPES = os.getenv("MODERNIZED_LEGAL_TYPES", "BEN,CBEN,CP,GP,SP").upper().split(",")
+    MODERNIZED_LEGAL_TYPES = (
+        os.getenv("MODERNIZED_LEGAL_TYPES", "BEN,CBEN,CP,GP,SP").upper().split(",")
+    )
     # TODO: confirm this list (all other legal types will be ignored)
-    CONFLICT_LEGAL_TYPES = os.getenv("CONFLICT_LEGAL_TYPES", "A,BC,BEN,C,CBEN,CCC,CP,CUL,ULC").upper().split(",")
+    CONFLICT_LEGAL_TYPES = (
+        os.getenv("CONFLICT_LEGAL_TYPES", "A,BC,BEN,C,CBEN,CCC,CP,CUL,ULC")
+        .upper()
+        .split(",")
+    )
 
     INCLUDE_COLIN_LOAD = os.getenv("INCLUDE_COLIN_LOAD", "True") == "True"
     INCLUDE_LEAR_LOAD = os.getenv("INCLUDE_LEAR_LOAD", "True") == "True"
@@ -118,7 +125,9 @@ class Config:
     LEAR_DB_HOST = os.getenv("LEAR_DATABASE_HOST", "")
     LEAR_DB_PORT = os.getenv("LEAR_DATABASE_PORT", "5432")
     LEAR_DB_CONNECTION_NAME = os.getenv("LEAR_DATABASE_CONNECTION_NAME")
-    GOOGLE_APPLICATION_CREDENTIALS_LEAR = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_LEAR", "sa-secret/lear/secret.json")
+    GOOGLE_APPLICATION_CREDENTIALS_LEAR = os.getenv(
+        "GOOGLE_APPLICATION_CREDENTIALS_LEAR", "sa-secret/lear/secret.json"
+    )
 
     # Connection pool settings
     DB_MIN_POOL_SIZE = os.getenv("DATABASE_MIN_POOL_SIZE", "2")

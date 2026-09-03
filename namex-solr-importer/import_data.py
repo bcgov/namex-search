@@ -33,8 +33,10 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """The Search solr data import service."""
 
+import os
 import sys
 from dataclasses import asdict
+from datetime import UTC, datetime
 
 from flask import current_app
 from sqlalchemy import CursorResult
@@ -49,6 +51,7 @@ from namex_solr_importer.utils import (
     import_conflicts,
     parse_conflict,
     parse_synonyms,
+    reindex_optimize,
     reindex_post,
     reindex_prep,
     reindex_recovery,
@@ -69,48 +72,82 @@ def _load_synonyms():
 
 def _load_conflicts(data_cur: CursorResult, data_name: str, conflict_type: str):
     """Update namex search with the given conflicts."""
-    current_app.logger.debug("Fetching data...")
-    data = data_cur.fetchall()
     # NOTE: for the colin connection the data_cur is not a 'CursorResult' type
     if isinstance(data_cur, CursorResult):
-        # CursorResult
         namex_descs = data_cur.keys()
     else:
-        # Oracle cusrsor
         namex_descs = [desc[0].lower() for desc in data_cur.description]
-    nr_data: dict[str, dict] = {}
-    possible_conflicts = []
-    current_app.logger.debug("Parsing data...")
-    for item in data:
-        item_dict = dict(zip(namex_descs, item, strict=False))
-        if conflict_type == "CORP":
-            # corps can be added to possible_conflicts right away
-            possible_conflicts.append(asdict(parse_conflict(item_dict, conflict_type)))
-        elif conflict_type == "NR":
-            # each nr name will have its own record, so we have to put them together
-            name_dict = {
-                "name": item_dict["name"],
-                "name_state": item_dict["name_state"],
-                "submit_count": item_dict["submit_count"],
-                "choice": item_dict["choice"],
-            }
 
-            if (nr_num := item_dict["nr_num"]) in nr_data:
-                # add name to nr
-                nr_data[nr_num]["names"].append(name_dict)
-            else:
-                # add 'names' field with this name (others under the same NR will be added to this)
-                item_dict["names"] = [name_dict]
-                # add nr to dict
-                nr_data[nr_num] = item_dict
+    batch_size = current_app.config["BATCH_SIZE"]
+    count = 0
+    batch = []
+    last_record = None
 
-    for nr_conflict in nr_data.values():
-        # parse all the nrs (the names will be grouped underneath them now)
-        possible_conflicts.append(asdict(parse_conflict(nr_conflict, conflict_type)))
+    current_app.logger.debug("Streaming data...")
 
-    current_app.logger.debug("Importing data...")
-    final_record = [possible_conflicts[-1]], data_name
-    return import_conflicts(possible_conflicts, data_name), final_record
+    if conflict_type == "CORP":
+        while True:
+            rows = data_cur.fetchmany(batch_size)
+            if not rows:
+                break
+            for item in rows:
+                item_dict = dict(zip(namex_descs, item, strict=False))
+                doc = asdict(parse_conflict(item_dict, conflict_type))
+                batch.append(doc)
+                last_record = doc
+            if len(batch) >= batch_size:
+                count += import_conflicts(batch, data_name)
+                batch = []
+
+    elif conflict_type == "NR":
+        current_nr_num = None
+        names = []
+        nr_data = None
+
+        while True:
+            rows = data_cur.fetchmany(batch_size)
+            if not rows:
+                break
+            for item in rows:
+                item_dict = dict(zip(namex_descs, item, strict=False))
+                nr_num = item_dict["nr_num"]
+
+                if nr_num != current_nr_num:
+                    # process previous NR
+                    if current_nr_num is not None:
+                        nr_data["names"] = names
+                        doc = asdict(parse_conflict(nr_data, conflict_type))
+                        batch.append(doc)
+                        last_record = doc
+                        if len(batch) >= batch_size:
+                            count += import_conflicts(batch, data_name)
+                            batch = []
+                    # start new NR
+                    current_nr_num = nr_num
+                    names = []
+                    nr_data = item_dict
+
+                name_dict = {
+                    "name": item_dict["name"],
+                    "name_state": item_dict["name_state"],
+                    "submit_count": item_dict["submit_count"],
+                    "choice": item_dict["choice"],
+                }
+                names.append(name_dict)
+
+        # process last NR
+        if current_nr_num is not None:
+            nr_data["names"] = names
+            doc = asdict(parse_conflict(nr_data, conflict_type))
+            batch.append(doc)
+            last_record = doc
+
+    current_app.logger.debug("Importing remaining data...")
+    if batch:
+        count += import_conflicts(batch, data_name)
+
+    final_record = [last_record], data_name
+    return count, final_record
 
 
 def _load_nrs():
@@ -144,15 +181,23 @@ def load_conflicts_core():  # noqa: PLR0915
     """Load data from Synonyms, NameX, LEAR and COLIN into the conflicts core."""
     try:
         is_reindex = current_app.config.get("REINDEX_CORE")
+        import_started_at = datetime.now(UTC)
         include_synonym_load = current_app.config.get("INCLUDE_SYNONYM_LOAD")
         include_namex_load = current_app.config.get("INCLUDE_NAMEX_LOAD")
         include_colin_load = current_app.config.get("INCLUDE_COLIN_LOAD")
         include_lear_load = current_app.config.get("INCLUDE_LEAR_LOAD")
         final_record = None
 
+        current_app.logger.debug(
+            "Import watermark captured at: %s",
+            import_started_at.isoformat(),
+        )
+
         if is_reindex and current_app.config.get("IS_PARTIAL_IMPORT"):
             current_app.logger.error("Attempted reindex on partial data set.")
-            current_app.logger.debug("Setting reindex to False to prevent potential data loss.")
+            current_app.logger.debug(
+                "Setting reindex to False to prevent potential data loss."
+            )
             is_reindex = False
 
         if is_reindex:
@@ -171,14 +216,20 @@ def load_conflicts_core():  # noqa: PLR0915
             colin_count = 0
             if include_colin_load:
                 colin_count, final_record = _load_colin_corps()
-                current_app.logger.debug(f"Total COLIN Corp records imported: {colin_count}")
+                current_app.logger.debug(
+                    f"Total COLIN Corp records imported: {colin_count}"
+                )
 
             lear_count = 0
             if include_lear_load:
                 lear_count, final_record = _load_lear_corps()
-                current_app.logger.debug(f"Total LEAR Corp records imported: {lear_count}")
+                current_app.logger.debug(
+                    f"Total LEAR Corp records imported: {lear_count}"
+                )
 
-            current_app.logger.debug(f"Total possible conflicts imported: {nr_count + colin_count + lear_count}")
+            current_app.logger.debug(
+                f"Total possible conflicts imported: {nr_count + colin_count + lear_count}"
+            )
 
         except Exception as err:
             if is_reindex:
@@ -187,7 +238,7 @@ def load_conflicts_core():  # noqa: PLR0915
 
         try:
             current_app.logger.debug("---------- Resync ----------")
-            resync()
+            resync(import_started_at)
         except Exception as error:  # pylint: disable=broad-exception-caught
             current_app.logger.debug(error.with_traceback(None))
             current_app.logger.error("Resync failed.")
@@ -202,10 +253,19 @@ def load_conflicts_core():  # noqa: PLR0915
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             current_app.logger.debug(error.with_traceback(None))
-            current_app.logger.error("Final commit failed. (This will only effect DEV).")
+            current_app.logger.error(
+                "Final commit failed. (This will only effect DEV)."
+            )
 
+        current_app.logger.debug("---------- Post Import Actions ----------")
+        if current_app.config.get("ENABLE_OPTIMIZE", True):
+            try:
+                reindex_optimize()
+            except Exception as err:
+                current_app.logger.warning(f"Optimize request timed out — Solr may still be running it in background: {err}")
+        else:
+            current_app.logger.debug("Optimize disabled via config.")
         if is_reindex:
-            current_app.logger.debug("---------- Post Reindex Actions ----------")
             reindex_post()
 
         current_app.logger.debug("SOLR import finished successfully.")
@@ -217,9 +277,23 @@ def load_conflicts_core():  # noqa: PLR0915
         sys.exit(1)
 
 
+def _write_sentinel():
+    """Write sentinel file to signal sidecar that import is done."""
+    try:
+        sentinel_path = "/code/cache/.import-done"
+        os.makedirs(os.path.dirname(sentinel_path), exist_ok=True)
+        with open(sentinel_path, "w") as f:
+            f.write("done")
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+
 if __name__ == "__main__":
     print("Starting data importer...")  # noqa: T201
     app = create_app()
     with app.app_context():
-        load_conflicts_core()
+        try:
+            load_conflicts_core()
+        finally:
+            _write_sentinel()
         sys.exit(0)

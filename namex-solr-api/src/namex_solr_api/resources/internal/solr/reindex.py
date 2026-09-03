@@ -71,6 +71,23 @@ def get_replication_detail(field: str, leader: bool):
 
 
 # -----------------------------
+# Optimize
+# -----------------------------
+@bp.post("/optimize")
+@cross_origin(origins="*")
+@jwt.requires_roles([User.Role.system.value])
+def reindex_optimize_endpoint():
+    """Run Solr optimize to merge all index segments into one."""
+    try:
+        current_app.logger.debug("Optimizing leader index to merge segments...")
+        solr.optimize()
+        return jsonify({"message": "Optimize completed successfully."}), HTTPStatus.OK
+    except Exception as err:
+        current_app.logger.warning(f"Optimize request failed (may be running in background): {err}")
+        return exception_response(err)
+
+
+# -----------------------------
 # Reindex Prep
 # -----------------------------
 @bp.post("/prep")
@@ -96,10 +113,12 @@ def reindex_prep_endpoint():
         for i in range(20):
             current_app.logger.debug(f"Checking new backup {i+1}/20...")
             if backup_detail := get_replication_detail("backup", True):
-                backup_start_time = datetime.fromisoformat(backup_detail["startTime"])
-                if backup_detail["status"] == "success" and backup_trigger_time < backup_start_time:
-                    backup_succeeded = True
-                    break
+                start_time_str = backup_detail.get("startTime")
+                if start_time_str and backup_detail.get("status") == "success":
+                    backup_start_time = datetime.fromisoformat(start_time_str)
+                    if backup_trigger_time < backup_start_time:
+                        backup_succeeded = True
+                        break
             sleep(30 + (i*2))
 
         if not backup_succeeded:

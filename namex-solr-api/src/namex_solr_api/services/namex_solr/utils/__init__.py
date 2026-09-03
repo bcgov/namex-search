@@ -32,6 +32,20 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """This module manages util methods for the NameX solr service."""
-from .formatting_helpers import prep_query_str_namex
+from .formatting_helpers import (
+    DISTINCTIVE_COVERAGE_BOOST_WEIGHT,
+    INITIALS_GROUP_BOOST_WEIGHT,
+    apply_conflict_wildcard_boosts,
+    apply_leading_wildcard_rank,
+    build_distinctive_coverage_boosts,
+    build_initials_group_boosts,
+    conflict_match_prep_terms,
+    normalize_conflict_initials,
+    normalize_nr_num,
+    parse_conflict_wildcard,
+    prep_query_str_namex,
+    remove_designation_tokens,
+    strip_trailing_designations,
+)
 from .namex_search_helper import namex_search
 from .synonym_helpers import get_synonyms

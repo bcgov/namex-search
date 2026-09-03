@@ -34,6 +34,7 @@
 """Manages util methods for updating possible conflict records via the namex solr api."""
 
 import time
+from datetime import datetime
 from http import HTTPStatus
 
 import requests
@@ -73,7 +74,7 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
         try:
             current_app.logger.debug("Importing batch...")
             import_resp = requests.put(
-                url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/import",
+                url=f"{current_app.config.get('SOLR_API_URL')}/internal/solr/import",
                 headers=headers,
                 json={
                     "possibleConflicts": docs[offset:count],
@@ -134,30 +135,43 @@ def import_conflicts(docs: list[dict], data_name: str, partial=False) -> int:
                 continue
             # log and raise error
             current_app.logger.error("Retry count exceeded for batch.")
-            raise SolrException("Retry count exceeded for updating SOLR. Aborting import.") from err
+            raise SolrException(
+                "Retry count exceeded for updating SOLR. Aborting import."
+            ) from err
         offset = count
-        current_app.logger.debug(f"Total batch {data_name} doc records imported: {count}")
+        current_app.logger.debug(
+            f"Total batch {data_name} doc records imported: {count}"
+        )
     return count
 
 
-def resync():
+def resync(since: datetime | None = None):
     """Resync to catch any records that had an update during the import."""
     current_app.logger.debug("Getting token for Resync...")
     token = auth.get_bearer_token()
     headers = {"Authorization": "Bearer " + token}
 
+    payload = {"minutesOffset": current_app.config.get("RESYNC_OFFSET")}
+    if since:
+        payload = {"since": since.isoformat()}
+        current_app.logger.debug("Using explicit resync watermark: %s", payload["since"])
+
     current_app.logger.debug("Resyncing any overwritten docs during import...")
     resync_resp = requests.post(
-        url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/update/resync",
+        url=f"{current_app.config.get('SOLR_API_URL')}/internal/solr/update/resync",
         headers=headers,
-        json={"minutesOffset": current_app.config.get("RESYNC_OFFSET")},
+        json=payload,
         timeout=60,
     )
     if resync_resp.status_code != HTTPStatus.CREATED:
         if resync_resp.status_code == HTTPStatus.GATEWAY_TIMEOUT:
-            current_app.logger.debug("Resync timed out -- check api for any individual failures.")
+            current_app.logger.debug(
+                "Resync timed out -- check api for any individual failures."
+            )
         else:
-            current_app.logger.error("Resync failed: %s, %s", resync_resp.status_code, resync_resp.json())
+            current_app.logger.error(
+                "Resync failed: %s, %s", resync_resp.status_code, resync_resp.json()
+            )
     else:
         current_app.logger.debug("Resync complete.")
 
@@ -171,7 +185,7 @@ def update_synonyms(payload: dict):
     current_app.logger.debug("Updating Synonyms...")
     try:
         resp = requests.put(
-            url=f"{current_app.config.get("SOLR_API_URL")}/internal/solr/update/synonyms?prune=true",
+            url=f"{current_app.config.get('SOLR_API_URL')}/internal/solr/update/synonyms?prune=true",
             headers=headers,
             json={"ALL": payload},
             timeout=1200,

@@ -22,11 +22,12 @@ ZONES=("northamerica-northeast1-a" "northamerica-northeast1-b" "northamerica-nor
 REGION="northamerica-northeast1"
 REPO_PATH="${REGION}-docker.pkg.dev/${ARTIFACT_REGISTRY_PROJECT}/vm-repo"
 
-# Template version must match what update-solr-base-image.sh created
-TEMPLATE_VERSION=""
+# Template versions must match what update-solr-base-image.sh created
+LEADER_TEMPLATE_VERSION=""       # e.g., "v2" or "v3"
+FOLLOWER_TEMPLATE_VERSION=""  # e.g., "v8cpu"
 
-LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
-FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${TEMPLATE_VERSION:+-$TEMPLATE_VERSION}"
+LEADER_TEMPLATE="namex-solr-leader-vm-tmpl-${ENV}${LEADER_TEMPLATE_VERSION:+-$LEADER_TEMPLATE_VERSION}"
+FOLLOWER_TEMPLATE="namex-solr-follower-vm-tmpl-${ENV}${FOLLOWER_TEMPLATE_VERSION:+-$FOLLOWER_TEMPLATE_VERSION}"
 
 
 ########################################
@@ -45,15 +46,25 @@ require() {
 check_prereqs() {
     log "Checking required tools…"
     require gcloud
-    require docker
-    require make
-    require oc
 
-    log "Verifying authentication…"
+    log "Verifying gcloud authentication…"
     if ! gcloud auth print-access-token &>/dev/null; then
         echo "ERROR: gcloud is not authenticated. Run: gcloud auth login"
         exit 1
     fi
+}
+
+check_build_prereqs() {
+    check_prereqs
+    require docker
+    require make
+}
+
+check_deploy_prereqs() {
+    check_prereqs
+    require oc
+
+    log "Verifying oc authentication…"
     if ! oc whoami &>/dev/null; then
         echo "ERROR: oc is not authenticated. Run: oc login"
         exit 1
@@ -63,13 +74,20 @@ check_prereqs() {
 create_vm_in_available_zone() {
     local vm_name="$1"
     local template="$2"
+    local machine_type="${3:-}"
 
     for zone in "${ZONES[@]}"; do
         log "Trying to create ${vm_name} in ${zone}…" >&2
-        if timeout 120 gcloud compute instances create "${vm_name}" \
-            --source-instance-template "${template}" \
-            --zone "${zone}" \
-            --project "${PROJECT_ID}" >&2; then
+        local create_args=(
+            gcloud compute instances create "${vm_name}"
+            --source-instance-template "${template}"
+            --zone "${zone}"
+            --project "${PROJECT_ID}"
+        )
+        if [[ -n "${machine_type}" ]]; then
+            create_args+=(--machine-type "${machine_type}")
+        fi
+        if timeout 120 "${create_args[@]}" >&2; then
             echo "${zone}"
             return 0
         fi
@@ -312,7 +330,7 @@ deploy_instances() {
         --region="${REGION}" --project="${PROJECT_ID}" 2>/dev/null || true
 
     log "Creating NEW Leader VM: ${NEW_LEADER_VM}"
-    LEADER_ZONE=$(create_vm_in_available_zone "${NEW_LEADER_VM}" "${LEADER_TEMPLATE}")
+    LEADER_ZONE=$(create_vm_in_available_zone "${NEW_LEADER_VM}" "${LEADER_TEMPLATE}" "${LEADER_MACHINE_TYPE}")
     log "Leader created in zone: ${LEADER_ZONE}"
 
     NEW_LEADER_INTERNAL_IP=$(gcloud compute instances describe "${NEW_LEADER_VM}" \
@@ -424,7 +442,7 @@ deploy_instances() {
     ########################################
 
     log "Creating NEW Follower VM: ${NEW_FOLLOWER_VM}"
-    FOLLOWER_ZONE=$(create_vm_in_available_zone "${NEW_FOLLOWER_VM}" "${FOLLOWER_TEMPLATE}")
+    FOLLOWER_ZONE=$(create_vm_in_available_zone "${NEW_FOLLOWER_VM}" "${FOLLOWER_TEMPLATE}" "${FOLLOWER_MACHINE_TYPE}")
     log "Follower created in zone: ${FOLLOWER_ZONE}"
 
     # Wait for follower Solr core before configuring replication
@@ -503,12 +521,46 @@ deploy_instances() {
 }
 
 ########################################
+# PARSE FLAGS
+########################################
+ACTION="${1:-}"
+shift || true
+
+LEADER_MACHINE_TYPE=""
+FOLLOWER_MACHINE_TYPE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --leader-machine-type=*)
+      LEADER_MACHINE_TYPE="${1#*=}"
+      shift
+      ;;
+    --leader-machine-type)
+      LEADER_MACHINE_TYPE="$2"
+      shift 2
+      ;;
+    --follower-machine-type=*)
+      FOLLOWER_MACHINE_TYPE="${1#*=}"
+      shift
+      ;;
+    --follower-machine-type)
+      FOLLOWER_MACHINE_TYPE="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+########################################
 # MAIN
 ########################################
 
-case "${1:-}" in
+case "${ACTION}" in
     build)
-        check_prereqs
+        check_build_prereqs
         build_images
         ;;
     tag)
@@ -516,7 +568,7 @@ case "${1:-}" in
         tag_images
         ;;
     deploy)
-        check_prereqs
+        check_deploy_prereqs
         deploy_instances
         ;;
     *)
@@ -524,6 +576,10 @@ case "${1:-}" in
         echo "  $0 build     # DEV: Build & push leader image only"
         echo "  $0 tag       # Tag images for TEST/PROD"
         echo "  $0 deploy    # Deploy leader only (DEV) or leader+follower (TEST/PROD)"
+        echo ""
+        echo "  Options (deploy only):"
+        echo "    --leader-machine-type <type>    Override leader machine type (e.g., e2-standard-4)"
+        echo "    --follower-machine-type <type>  Override follower machine type (e.g., e2-highcpu-8)"
         exit 1
         ;;
 esac

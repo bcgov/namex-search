@@ -63,7 +63,12 @@ class Config:
     SOLR_SVC_NAMEX_FOLLOWER_CORE = os.getenv("SOLR_SVC_NAMEX_FOLLOWER_CORE", "name_request_follower")
     SOLR_SVC_NAMEX_LEADER_URL = os.getenv("SOLR_SVC_NAMEX_LEADER_URL", "http://localhost:8863/solr")
     SOLR_SVC_NAMEX_FOLLOWER_URL = os.getenv("SOLR_SVC_NAMEX_FOLLOWER_URL", "http://localhost:8863/solr")
-    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "10000"))
+    # TODO: return a 400 if a call exceeds this
+    # Non-strict possible-conflicts cap. Keep in sync with MAX_HIGHLIGHTED_DOCS
+    # so the extra rows can still be classified into Examiner buckets.
+    SOLR_SVC_NAMEX_MAX_ROWS = int(os.getenv("SOLR_SVC_NAMEX_MAX_ROWS", "200"))
+    SOLR_SVC_NAMEX_TIMEOUT = int(os.getenv("SOLR_SVC_NAMEX_TIMEOUT", "60"))
+    SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS = int(os.getenv("SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS", "200"))
 
     AUTH_SVC_URL = os.getenv("AUTH_API_URL", "") + os.getenv("AUTH_API_VERSION", "")
 
@@ -72,34 +77,60 @@ class Config:
     # Used by /sync heartbeat
     LAST_REPLICATION_THRESHOLD = int(os.getenv("LAST_REPLICATION_THRESHOLD", "24"))  # hours
     
-    # Used for search parsing
-    DESIGNATIONS = os.getenv("DESIGNATIONS")
-    if not DESIGNATIONS:
-        DESIGNATIONS = [
-            "corp.",
-            "corporation",
-            "inc.",
-            "incorporated",
-            "incorporee",
-            "l.l.c.",
-            "limited",
-            "limited liability co.",
-            "limited liability company",
-            "limited liability PARTNERSHIP",
-            "limitee",
-            "llc",
-            "llp",
-            "ltd.",
-            "ltee",
-            "sencrl",
-            "societe a responsabilite limitee",
-            "societe en nom collectif a responsabilite limitee",
-            "srl",
-            "ulc",
-            "unlimited liability company",
-        ]
-    else:
-        DESIGNATIONS = DESIGNATIONS.lower().split()
+    # Conflict match-prep skip tokens (NameX words_to_filter_from_name) plus the
+    # previous Solr legal-designation fallback used by /nrs trailing strip.
+    # Spaced entries are phrases (trailing strip only; token skip ignores them).
+    # Deployed Cloud Run injects DESIGNATIONS from 1Password via vaults.gcp.env
+    # (op://solr/$APP_ENV/namex-search/DESIGNATIONS). Env is space-separated
+    # tokens; this Python list is unioned in so skip words and phrases remain
+    # even if 1Password only has legal suffixes.
+    # Ranking/boosts use the raw query and do not apply this list.
+    DEFAULT_DESIGNATIONS = [  # noqa: RUF012
+        "association",
+        "assoc",
+        "assoc.",
+        "assn",
+        "assn.",
+        "company",
+        "co",
+        "co.",
+        "corporation",
+        "corp",
+        "corp.",
+        "incorporated",
+        "inc",
+        "inc.",
+        "incorporee",
+        "liability",
+        "limited",
+        "ltd",
+        "ltd.",
+        "limitee",
+        "ltee",
+        "ltee.",
+        "society",
+        "soc",
+        "soc.",
+        "ulc",
+        "ulc.",
+        "unlimited",
+        # Previous Solr DESIGNATIONS fallback (unique items).
+        "l.l.c.",
+        "limited liability co.",
+        "limited liability company",
+        "limited liability partnership",
+        "llc",
+        "llp",
+        "sencrl",
+        "societe a responsabilite limitee",
+        "societe en nom collectif a responsabilite limitee",
+        "srl",
+        "unlimited liability company",
+    ]
+    # Env is space-separated so it cannot preserve phrases.
+    # FUTURE: Make it a comma separated list from the env
+    _designations_env = os.getenv("DESIGNATIONS", "")
+    DESIGNATIONS = _designations_env.split() if _designations_env else DEFAULT_DESIGNATIONS
 
     # Cache stuff
     CACHE_TYPE = os.getenv("CACHE_TYPE", "FileSystemCache")

@@ -36,7 +36,7 @@
 import re
 from http import HTTPStatus
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask.globals import request_ctx
 from flask_cors import cross_origin
 
@@ -45,7 +45,16 @@ from namex_solr_api.models import SearchHistory, User
 from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
-from namex_solr_api.services.namex_solr.utils import namex_search, prep_query_str_namex
+from namex_solr_api.services.namex_solr.utils import (
+    apply_conflict_wildcard_boosts,
+    apply_leading_wildcard_rank,
+    namex_search,
+    normalize_conflict_initials,
+    normalize_nr_num,
+    parse_conflict_wildcard,
+    prep_query_str_namex,
+    remove_designation_tokens,
+)
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
 
@@ -53,7 +62,7 @@ bp = Blueprint("SEARCH", __name__, url_prefix="/search")
 @bp.post("/possible-conflict-names")
 @cross_origin(origins="*")
 @jwt.requires_auth
-def possible_conflict_names():
+def possible_conflict_names():  # noqa: PLR0912, PLR0915
     """Return a list of possible conflict name results from solr."""
     try:
         # NOTE: request_ctx.current_user is set by jwt.requires_auth
@@ -66,10 +75,15 @@ def possible_conflict_names():
         # set base query params
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
+        wildcard = parse_conflict_wildcard(value)
+        value = wildcard.value
+        normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
-            "value": prep_query_str_namex(value, "replace"),
+            "value": remove_designation_tokens(
+                prep_query_str_namex(normalize_conflict_initials(value), "replace")
+            ),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
-            PCField.NR_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.NR_NUM.value, ""))
+            PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
@@ -90,8 +104,32 @@ def possible_conflict_names():
             NameField.NAME_STATE: categories_json.get(NameField.NAME_STATE.value, conflict_name_states)
         }
 
+        strict = request_json.get("strict", False)
         start = request_json.get("start", solr.default_start)
         rows = request_json.get("rows", solr.default_rows)
+        try:
+            strict = bool(strict)
+        except (TypeError, ValueError):
+            strict = False
+        try:
+            start = int(start)
+        except (TypeError, ValueError):
+            start = solr.default_start
+        try:
+            rows = max(0, int(rows))
+            if not strict:
+                # TODO: return 400 if request is asking for too many rows - could mess up their paging
+                # temporary setting for testing so that non strict doesn't overload the non strict search
+                max_rows = current_app.config['SOLR_SVC_NAMEX_MAX_ROWS']
+                rows = min(max_rows, rows)
+        except (TypeError, ValueError):
+            rows = solr.default_rows
+
+        highlighted_fields = [NameField.NAME_Q_SINGLE, NameField.NAME_Q_STEM_HIGHLIGHT, NameField.NAME_Q_PHON_EN, NameField.NAME_Q_SYN]
+        max_highlighted_docs = max(
+            0,
+            int(current_app.config["SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS"]),
+        )
 
         params = QueryParams(
             query=query,
@@ -101,7 +139,7 @@ def possible_conflict_names():
             child_query=child_query,
             child_categories=child_categories,
             fields=solr.resp_fields_nested,
-            highlighted_fields=[NameField.NAME_Q_SINGLE, NameField.NAME_Q_STEM_HIGHLIGHT, NameField.NAME_Q_PHON_EN, NameField.NAME_Q_SYN],
+            highlighted_fields=highlighted_fields,
             query_boost_fields={
                 NameField.NAME_Q_AGRO: 2,
                 NameField.NAME_Q_SINGLE: 2,
@@ -125,11 +163,19 @@ def possible_conflict_names():
                 NameField.NAME_Q_SYN: "child"
             },
             full_query_boosts=(
-                solr.get_name_search_full_query_boost(value) + (
+                apply_conflict_wildcard_boosts(
+                    solr.get_name_search_full_query_boost(value),
+                    wildcard.leading,
+                )
+                + (
                     # Exact phrase boost: when the caller supplies an exact_phrase, strongly
                     # prefer names that contain it as a phrase.  Strategy A (boost, not filter)
                     # keeps all conflicts visible while surfacing phrase-matching names first.
-                    [f'{NameField.NAME_Q_SINGLE.value}:"{exact_phrase}"^50']
+                    [{
+                        "field": NameField.NAME_Q_SINGLE,
+                        "value": exact_phrase,
+                        "boost": "50",
+                    }]
                     if (exact_phrase := request_json.get("exact_phrase", "").strip().lower())
                     else []
                 )
@@ -138,8 +184,49 @@ def possible_conflict_names():
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
         )
 
-        results = namex_search(params, solr, True)
-        solr_highlighting: dict[str, dict[str, list[str]]] = results.get("highlighting", {})
+        results = None
+        solr_highlighting: dict[str, dict[str, list[str]]] = {}
+        if rows <= max_highlighted_docs:
+            results = namex_search(params, solr, True, strict)
+            solr_highlighting = results.get("highlighting", {})
+        else:
+            # Run the main search without highlighting, then a smaller highlighted pass.
+            results = namex_search(QueryParams(
+                query=params.query,
+                rows=params.rows,
+                start=params.start,
+                categories=params.categories,
+                child_query=params.child_query,
+                child_categories=params.child_categories,
+                fields=params.fields,
+                highlighted_fields=[],
+                query_fields=params.query_fields,
+                query_boost_fields=params.query_boost_fields,
+                query_fuzzy_fields=params.query_fuzzy_fields,
+                query_synonym_fields=params.query_synonym_fields,
+                full_query_boosts=params.full_query_boosts,
+                exclude_sub_types=params.exclude_sub_types,
+            ), solr, True, strict)
+
+            highlight_rows = min(rows, max_highlighted_docs)
+            if highlight_rows > 0:
+                highlight_results = namex_search(QueryParams(
+                    query=params.query,
+                    rows=highlight_rows,
+                    start=params.start,
+                    categories=params.categories,
+                    child_query=params.child_query,
+                    child_categories=params.child_categories,
+                    fields=params.fields,
+                    highlighted_fields=highlighted_fields,
+                    query_fields=params.query_fields,
+                    query_boost_fields=params.query_boost_fields,
+                    query_fuzzy_fields=params.query_fuzzy_fields,
+                    query_synonym_fields=params.query_synonym_fields,
+                    full_query_boosts=params.full_query_boosts,
+                    exclude_sub_types=params.exclude_sub_types,
+                ), solr, True, strict)
+                solr_highlighting = highlight_results.get("highlighting", {})
         docs = []
         for result in results.get("response", {}).get("docs"):
             def split_highlights(highlights: list[str]):
@@ -178,6 +265,8 @@ def possible_conflict_names():
                     "synonyms": list(set(synonym_highlights))
                 }
             })
+        if wildcard.leading and not wildcard.trailing and start == 0:
+            docs = apply_leading_wildcard_rank(docs, value)
         # save search in the db
         SearchHistory(
             query=request_json,
@@ -225,10 +314,11 @@ def nrs():
         # set base query params
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
+        normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
             "value": prep_query_str_namex(value),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
-            PCField.NR_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.NR_NUM.value, ""))
+            PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
@@ -248,6 +338,11 @@ def nrs():
 
         start = request_json.get("start", solr.default_start)
         rows = request_json.get("rows", solr.default_rows)
+        strict = request_json.get("strict", True)
+        try:
+            strict = bool(strict)
+        except (TypeError, ValueError):
+            strict = True
 
         params = QueryParams(
             query=query,
@@ -285,7 +380,7 @@ def nrs():
             exclude_sub_types=[]
         )
 
-        results = namex_search(params, solr, False)
+        results = namex_search(params, solr, False, strict)
         docs = results.get("response", {}).get("docs")
 
         response = {

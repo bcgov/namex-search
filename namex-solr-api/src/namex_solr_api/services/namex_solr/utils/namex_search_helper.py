@@ -41,7 +41,27 @@ from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from .add_category_filters import add_category_filters
 
 
-def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
+def format_full_query_boost(info: dict) -> str:
+    """Render one full-query boost clause.
+
+    Accepts three shapes: term_clauses (AND of pre-built clauses), values
+    (AND of field:token), or value with an optional fuzzy width.
+    """
+    boost = info["boost"]
+    if term_clauses := info.get("term_clauses"):
+        inner = " AND ".join(term_clauses)
+        return f"(({inner})^{boost})"
+    field = info["field"].value
+    if values := info.get("values"):
+        inner = " AND ".join(f"{field}:{token}" for token in values)
+        return f"(({inner})^{boost})"
+    clause = f'{field}:"{info["value"]}"'
+    if fuzzy := info.get("fuzzy"):
+        clause += f"~{fuzzy}"
+    return f"({clause}^{boost})"
+
+
+def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
     """Return the list of possible conflicts from Solr that match the query."""
     # initialize payload with base doc query (init query / filter)
     initial_queries = solr.query_builder.build_base_query(
@@ -50,15 +70,12 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool):
         boost_fields=params.query_boost_fields,
         fuzzy_fields=params.query_fuzzy_fields,
         synonym_fields=params.query_synonym_fields,
-        is_child_search=is_name_search)
+        is_child_search=is_name_search,
+        clause_bridge="AND" if is_strict else "OR")
 
     # boosts for term order result ordering
     for info in params.full_query_boosts:
-        initial_queries["query"] += f' OR ({info["field"].value}:"{info["value"]}"'
-        if fuzzy := info.get("fuzzy"):
-            initial_queries["query"] += f'~{fuzzy}^{info["boost"]})'
-        else:
-            initial_queries["query"] += f'^{info["boost"]})'
+        initial_queries["query"] += f" OR {format_full_query_boost(info)}"
 
     # add defaults
     parent_field = NameField.PARENT_TYPE.value if is_name_search else PCField.TYPE.value

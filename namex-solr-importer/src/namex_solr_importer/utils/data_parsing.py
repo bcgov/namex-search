@@ -60,16 +60,19 @@ def parse_conflict(data: dict, conflict_type: str) -> PossibleConflict:
     """Parse the data as a PossibleConflict."""
     converted_start_date = None
     if start_date := data.get("start_date"):
-        converted_start_date = datetime.isoformat(start_date, timespec="seconds").replace("+00:00", "")
+        converted_start_date = datetime.isoformat(
+            start_date, timespec="seconds"
+        ).replace("+00:00", "")
+    nr_num = "".join(data["nr_num"].split()) if data.get("nr_num") else None
     return PossibleConflict(
-        id=data["nr_num"] if conflict_type == "NR" else data["corp_num"],
+        id=nr_num if conflict_type == "NR" else data["corp_num"],
         names=_parse_names(data, conflict_type),
         state=data["state"],
         type=conflict_type,
         sub_type=data.get("sub_type"),
         corp_num=data.get("corp_num"),
         jurisdiction=data.get("jurisdiction") or "BC",
-        nr_num=data.get("nr_num"),
+        nr_num=nr_num,
         start_date=converted_start_date,
     )
 
@@ -79,5 +82,7 @@ def parse_synonyms(data: list[tuple[str]]) -> dict[str, list[str]]:
     # i.e. [('test, tester, testing',), ('something, somethingelse',)] -> {'test': ['test', 'tester'...], 'something': [...]}
     parsed_synonyms = {}
     for synonym_list in data:
-        parsed_synonyms[synonym_list[0].split(",")[0].strip()] = [x.strip() for x in synonym_list[0].split(",")]
+        parsed_synonyms[synonym_list[0].split(",")[0].strip()] = [
+            x.strip() for x in synonym_list[0].split(",")
+        ]
     return parsed_synonyms

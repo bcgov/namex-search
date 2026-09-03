@@ -46,20 +46,20 @@ elif [[ "$ENV" == "test" ]]; then
   LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "sandbox" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-6656"
-  BOOT_DISK_SIZE_FOLLOWER="16GiB"
+  BOOT_DISK_SIZE_FOLLOWER="24GiB"
   FOLLOWER_JVM_MEM="1g"
 
   MACHINE_TYPE_LEADER="custom-1-6656"
   BOOT_DISK_SIZE_LEADER="24GiB"
   LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "prod" ]]; then
-  MACHINE_TYPE_FOLLOWER="custom-1-8192-ext"
-  BOOT_DISK_SIZE_FOLLOWER="16GiB"
-  FOLLOWER_JVM_MEM="1g"
+  MACHINE_TYPE_FOLLOWER="e2-standard-2"
+  BOOT_DISK_SIZE_FOLLOWER="24GiB"
+  FOLLOWER_JVM_MEM="4g"
 
-  MACHINE_TYPE_LEADER="custom-2-10240"
-  BOOT_DISK_SIZE_LEADER="24GiB"
-  LEADER_JVM_MEM="2g"
+  MACHINE_TYPE_LEADER="e2-standard-4"
+  BOOT_DISK_SIZE_LEADER="40GiB"
+  LEADER_JVM_MEM="4g"
 fi
 
 FOLLOWER_ROLE="follower"
@@ -79,20 +79,7 @@ IMAGE_REPO="vm-repo"
 LEADER_HC_NAME="${APP}-solr-leader-hc-$ENV"
 FOLLOWER_HC_NAME="${APP}-solr-follower-hc-$ENV"
 
-SERVICE_ACCOUNT=$(gcloud iam service-accounts list \
-  --format="value(email)" \
-  --filter 'displayName="Default compute service account"' \
-  --project="$PROJECT_ID")
-
-## ============================================================
-##  ARTIFACT REGISTRY PERMISSIONS
-## ============================================================
-
-echo "➤ Adding artifact registry pull permissions..."
-
-gcloud projects add-iam-policy-binding "$ARTIFACT_REGISTRY_PROJECT" \
-  --member "serviceAccount:${SERVICE_ACCOUNT}" \
-  --role "roles/artifactregistry.serviceAgent"
+SERVICE_ACCOUNT="sa-solr-vm@${PROJECT_ID}.iam.gserviceaccount.com"
 
 ### ============================================================
 ###  ASSIGN INTERNAL STATIC IPs

@@ -60,14 +60,25 @@ def _call_reindex_endpoint(endpoint: str, timeout: int = 1800) -> bool:
         ):
             raise SolrException(
                 f"Reindex endpoint '{endpoint}' failed.",
-                (resp.json() if resp.headers.get("Content-Type") == "application/json" else resp.text),
+                (
+                    resp.json()
+                    if resp.headers.get("Content-Type") == "application/json"
+                    else resp.text
+                ),
                 resp.status_code,
             )
-        current_app.logger.debug(f"Reindex endpoint '{endpoint}' completed successfully.")
+        current_app.logger.debug(
+            f"Reindex endpoint '{endpoint}' completed successfully."
+        )
         return True
     except Exception as err:
         current_app.logger.error(f"Reindex endpoint '{endpoint}' failed: {err}")
         raise
+
+
+def reindex_optimize() -> bool:
+    """Trigger Solr optimize via the API."""
+    return _call_reindex_endpoint("optimize")
 
 
 def reindex_prep() -> bool:

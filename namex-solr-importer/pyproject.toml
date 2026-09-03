@@ -164,6 +164,10 @@ docstring-quotes = "double"
 [tool.ruff.lint.extend-per-file-ignores]
 "**/__init__.py" = ["F401"]  # used for imports
 
+[tool.ruff.lint.pylint]
+max-branches = 16
+max-statements = 60
+
 [tool.pytest.ini_options]
 minversion = "2.0"
 testpaths = [

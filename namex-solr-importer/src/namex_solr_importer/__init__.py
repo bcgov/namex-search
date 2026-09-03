@@ -80,7 +80,9 @@ config = {
 }
 
 
-def create_app(config_name: str = os.getenv("DEPLOYMENT_ENV", "production") or "production"):
+def create_app(
+    config_name: str = os.getenv("DEPLOYMENT_ENV", "production") or "production",
+):
     """Return a configured Flask App using the Factory method."""
     app = Flask(__name__)
     app.config.from_object(config.get(config_name, ProductionConfig))

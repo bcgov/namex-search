@@ -50,6 +50,7 @@ class Base(db.Model):
         """Add and commit to the session."""
         db.session.add(self)
         db.session.commit()
+        return self
 
     @staticmethod
     def commit():
