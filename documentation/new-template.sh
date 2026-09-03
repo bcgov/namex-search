@@ -2,6 +2,17 @@
 set -euo pipefail
 
 # ============================================================
+#  FLAGS
+# ============================================================
+TEMPLATES_ONLY="false"
+UPDATE_VM="false"
+if [[ "${1:-}" == "--templates-only" ]]; then
+  TEMPLATES_ONLY="true"
+elif [[ "${1:-}" == "--update-vm" ]]; then
+  UPDATE_VM="true"
+fi
+
+# ============================================================
 #  CONFIG — change ENV as needed
 # ============================================================
 ENV="dev"   # dev / test / prod
@@ -77,7 +88,7 @@ fi
 echo "➤ Finding current VMs..."
 CURRENT_VMS=$(gcloud compute instances list \
   --project="$PROJECT_ID" \
-  --filter="name~namex-solr-(leader|follower).*${ENV}" \
+  --filter="name~namex-solr.*${ENV}" \
   --format="value(name)" 2>/dev/null || true)
 
 if [[ -n "$CURRENT_VMS" ]]; then
@@ -87,25 +98,29 @@ else
 fi
 
 # ============================================================
-#  DELETE OLD VMs
+#  DELETE OLD VMs (skipped with --templates-only or --update-vm)
 # ============================================================
-echo "➤ Deleting old VMs..."
-for VM_NAME in $CURRENT_VMS; do
-  # Remove from instance group first
-  ROLE=$(echo "$VM_NAME" | grep -o "leader\|follower")
-  GRP_NAME="${APP}-solr-${ROLE}-grp-${ENV}"
+if [[ "$TEMPLATES_ONLY" == "true" || "$UPDATE_VM" == "true" ]]; then
+  echo "➤ Skipping VM deletion (--templates-only or --update-vm)."
+else
+  echo "➤ Deleting old VMs..."
+  for VM_NAME in $CURRENT_VMS; do
+    # Remove from instance group first
+    ROLE=$(echo "$VM_NAME" | grep -o "leader\|follower")
+    GRP_NAME="${APP}-solr-${ROLE}-grp-${ENV}"
 
-  gcloud compute instance-groups unmanaged remove-instances "$GRP_NAME" \
-    --zone="$ZONE" \
-    --instances="$VM_NAME" \
-    --project="$PROJECT_ID" 2>/dev/null || true
+    gcloud compute instance-groups unmanaged remove-instances "$GRP_NAME" \
+      --zone="$ZONE" \
+      --instances="$VM_NAME" \
+      --project="$PROJECT_ID" 2>/dev/null || true
 
-  gcloud compute instances delete "$VM_NAME" \
-    --zone="$ZONE" \
-    --project="$PROJECT_ID" \
-    --quiet 2>/dev/null || true
-  echo "  Deleted: $VM_NAME"
-done
+    gcloud compute instances delete "$VM_NAME" \
+      --zone="$ZONE" \
+      --project="$PROJECT_ID" \
+      --quiet 2>/dev/null || true
+    echo "  Deleted: $VM_NAME"
+  done
+fi
 
 # ============================================================
 #  DELETE OLD TEMPLATES
@@ -119,7 +134,7 @@ for TMPL in "$INSTANCE_TEMPLATE_LEADER" "$INSTANCE_TEMPLATE_FOLLOWER"; do
 done
 
 # ============================================================
-#  CREATE NEW TEMPLATES (with new service account)
+#  CREATE NEW TEMPLATES
 # ============================================================
 echo "➤ Creating new leader template..."
 gcloud compute instance-templates create "$INSTANCE_TEMPLATE_LEADER" \
@@ -158,34 +173,64 @@ if [[ "$ENV" != "dev" ]]; then
 fi
 
 # ============================================================
-#  CREATE NEW VMs
+#  UPDATE SHIELDED SETTINGS ON RUNNING VMs (--update-vm only)
 # ============================================================
-NEW_LEADER_VM="${APP}-solr-${LEADER_ROLE}-$(date -u +"%Y-%m-%d--%H%M%S")"
+if [[ "$UPDATE_VM" == "true" && -n "$CURRENT_VMS" ]]; then
+  echo "➤ Updating shielded settings on running VMs (--update-vm)..."
+  for VM_NAME in $CURRENT_VMS; do
+    echo "  Stopping $VM_NAME..."
+    gcloud compute instances stop "$VM_NAME" \
+      --zone="$ZONE" \
+      --project="$PROJECT_ID"
 
-echo "➤ Creating leader VM: $NEW_LEADER_VM"
-gcloud compute instances create "$NEW_LEADER_VM" \
-  --source-instance-template "$INSTANCE_TEMPLATE_LEADER" \
-  --zone "$ZONE" \
-  --project "$PROJECT_ID"
+    echo "  Enabling Secure Boot on $VM_NAME..."
+    gcloud compute instances update "$VM_NAME" \
+      --shielded-secure-boot \
+      --zone="$ZONE" \
+      --project="$PROJECT_ID"
 
-gcloud compute instance-groups unmanaged add-instances "$LEADER_GRP_NAME" \
-  --zone="$ZONE" \
-  --instances="$NEW_LEADER_VM" \
-  --project="$PROJECT_ID"
+    echo "  Starting $VM_NAME..."
+    gcloud compute instances start "$VM_NAME" \
+      --zone="$ZONE" \
+      --project="$PROJECT_ID"
 
-if [[ "$ENV" != "dev" ]]; then
-  NEW_FOLLOWER_VM="${APP}-solr-${FOLLOWER_ROLE}-$(date -u +"%Y-%m-%d--%H%M%S")"
+    echo "  ✔ $VM_NAME updated."
+  done
+fi
 
-  echo "➤ Creating follower VM: $NEW_FOLLOWER_VM"
-  gcloud compute instances create "$NEW_FOLLOWER_VM" \
-    --source-instance-template "$INSTANCE_TEMPLATE_FOLLOWER" \
+# ============================================================
+#  CREATE NEW VMs (skipped with --templates-only or --update-vm)
+# ============================================================
+if [[ "$TEMPLATES_ONLY" == "true" || "$UPDATE_VM" == "true" ]]; then
+  echo "➤ Skipping VM creation (--templates-only or --update-vm)."
+else
+  NEW_LEADER_VM="${APP}-solr-${LEADER_ROLE}-$(date -u +"%Y-%m-%d--%H%M%S")"
+
+  echo "➤ Creating leader VM: $NEW_LEADER_VM"
+  gcloud compute instances create "$NEW_LEADER_VM" \
+    --source-instance-template "$INSTANCE_TEMPLATE_LEADER" \
     --zone "$ZONE" \
     --project "$PROJECT_ID"
 
-  gcloud compute instance-groups unmanaged add-instances "$FOLLOWER_GRP_NAME" \
+  gcloud compute instance-groups unmanaged add-instances "$LEADER_GRP_NAME" \
     --zone="$ZONE" \
-    --instances="$NEW_FOLLOWER_VM" \
-    --project="$PROJECT_ID"
-fi
+    --instances="$NEW_LEADER_VM" \
+    --project "$PROJECT_ID"
 
-echo "✔ Done. VMs created with service account: $SERVICE_ACCOUNT"
+  if [[ "$ENV" != "dev" ]]; then
+    NEW_FOLLOWER_VM="${APP}-solr-${FOLLOWER_ROLE}-$(date -u +"%Y-%m-%d--%H%M%S")"
+
+    echo "➤ Creating follower VM: $NEW_FOLLOWER_VM"
+    gcloud compute instances create "$NEW_FOLLOWER_VM" \
+      --source-instance-template "$INSTANCE_TEMPLATE_FOLLOWER" \
+      --zone "$ZONE" \
+      --project "$PROJECT_ID"
+
+    gcloud compute instance-groups unmanaged add-instances "$FOLLOWER_GRP_NAME" \
+      --zone="$ZONE" \
+      --instances="$NEW_FOLLOWER_VM" \
+      --project "$PROJECT_ID"
+  fi
+# fi
+
+echo "✔ Done. Templates created with service account: $SERVICE_ACCOUNT"

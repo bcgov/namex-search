@@ -10,7 +10,7 @@ This repository contains Bash scripts to automate the deployment and management 
 |------|--------|------------|
 | `gcp-solr-infra.sh` | One-time infrastructure setup | New environment or major infra change / Infrastructure bootstrap |
 | `update-solr-base-image.sh` | Create new VM templates with updated COS image | OS / security updates for base image (OS) |
-| `new-template.sh` | Full rebuild: delete VMs, recreate templates + VMs | Dev/test environments where a clean rebuild is acceptable |
+| `new-template.sh` | Full rebuild or template-only update | Dev/test: `--templates-only` for no downtime, `--update-vm` to apply shielded settings to running VMs |
 | `deploy-solr.sh` | Deploy Solr + rotate VMs | App changes or after base image update |
 
 > ⚠️ **Important:**
@@ -166,6 +166,20 @@ chmod +x update-solr-base-image.sh
 ```
 
 Creates new instance templates. Versions templates (e.g. -v2, -v3). Does not touch running VMs — a redeploy (`deploy-solr.sh deploy`) is required for changes to take effect.
+
+## Script 2b: Full VM Rebuild or Template Update
+
+Recreates instance templates (and optionally VMs) from scratch. Useful for applying new template settings like Secure Boot or custom service accounts.
+
+```
+chmod +x new-template.sh
+./documentation/new-template.sh                  # Full rebuild: delete VMs, recreate templates + VMs
+./documentation/new-template.sh --templates-only # Update templates only, leave running VMs untouched
+./documentation/new-template.sh --update-vm      # Update templates + enable Secure Boot on running VMs
+```
+
+- `--templates-only` skips VM deletion and creation — only replaces the instance templates. Use this when you want to update template settings without downtime or data loss.
+- `--update-vm` skips VM deletion and creation, but updates shielded settings (Secure Boot) on running VMs. VMs are stopped, updated, and restarted — expect brief downtime per VM.
 
 ## Script 3: Application Deploy & VM Rotation
 
