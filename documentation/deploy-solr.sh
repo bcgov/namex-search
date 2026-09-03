@@ -6,7 +6,7 @@ set -o errtrace  # ensure ERR traps fire inside functions/subshells
 # CONFIGURATION
 ########################################
 
-ENV="prod"   # dev / test / prod
+ENV="dev"   # dev / test / prod
 SOURCE_TAG="dev"
 
 PROJECT="a083gt"
