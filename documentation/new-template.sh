@@ -5,7 +5,7 @@ set -euo pipefail
 #  FLAGS
 # ============================================================
 TEMPLATES_ONLY="false"
-UPDATE_VM="false"
+UPDATE_VM="true"
 if [[ "${1:-}" == "--templates-only" ]]; then
   TEMPLATES_ONLY="true"
 elif [[ "${1:-}" == "--update-vm" ]]; then
@@ -142,7 +142,7 @@ gcloud compute instance-templates create "$INSTANCE_TEMPLATE_LEADER" \
   --machine-type="$MACHINE_TYPE_LEADER" \
   --network-interface=network=projects/$VPC_HOST_PROJECT_ID/global/networks/$VPC_NETWORK,subnet=projects/$VPC_HOST_PROJECT_ID/regions/$REGION/subnetworks/$VPC_SUBNET,stack-type=IPV4_ONLY,no-address \
   --metadata-from-file=startup-script="$PATH_TO_STARTUP_SCRIPT" \
-  --metadata=google-logging-enabled=true,role=$LEADER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$LEADER_JVM_MEM,image=$LEADER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,enable-block-project-wide-ssh-keys=TRUE \
+  --metadata=google-logging-enabled=true,role=$LEADER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$LEADER_JVM_MEM,image=$LEADER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,block-project-ssh-keys=TRUE \
   --maintenance-policy=MIGRATE \
   --provisioning-model=STANDARD \
   --service-account="$SERVICE_ACCOUNT" \
@@ -160,7 +160,7 @@ if [[ "$ENV" != "dev" ]]; then
     --machine-type="$MACHINE_TYPE_FOLLOWER" \
     --network-interface=network=projects/$VPC_HOST_PROJECT_ID/global/networks/$VPC_NETWORK,subnet=projects/$VPC_HOST_PROJECT_ID/regions/$REGION/subnetworks/$VPC_SUBNET,stack-type=IPV4_ONLY,no-address \
     --metadata-from-file=startup-script="$PATH_TO_STARTUP_SCRIPT" \
-    --metadata=google-logging-enabled=true,role=$FOLLOWER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$FOLLOWER_JVM_MEM,image=$FOLLOWER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,enable-block-project-wide-ssh-keys=TRUE \
+    --metadata=google-logging-enabled=true,role=$FOLLOWER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$FOLLOWER_JVM_MEM,image=$FOLLOWER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,block-project-ssh-keys=TRUE \
     --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --service-account="$SERVICE_ACCOUNT" \
@@ -231,6 +231,6 @@ else
       --instances="$NEW_FOLLOWER_VM" \
       --project "$PROJECT_ID"
   fi
-# fi
+fi
 
 echo "✔ Done. Templates created with service account: $SERVICE_ACCOUNT"
