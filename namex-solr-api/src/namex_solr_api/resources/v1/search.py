@@ -75,12 +75,25 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
         # set base query params
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
-        wildcard = parse_conflict_wildcard(value)
-        value = wildcard.value
+        # Phrase-only search is independent of the name box. Do not parse
+        # leading/trailing * as the conflict wildcard operator.
+        exact_phrase_only = str(request_json.get("exact_phrase_only", "")).strip().lower() in {
+            "1", "true", "yes"
+        }
+        if exact_phrase_only:
+            wildcard = parse_conflict_wildcard(None)
+            value = (value or "").strip()
+        else:
+            wildcard = parse_conflict_wildcard(value)
+            value = wildcard.value
         normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
-            "value": remove_designation_tokens(
-                prep_query_str_namex(normalize_conflict_initials(value), "replace")
+            "value": (
+                prep_query_str_namex(value, "replace")
+                if exact_phrase_only
+                else remove_designation_tokens(
+                    prep_query_str_namex(normalize_conflict_initials(value), "replace")
+                )
             ),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
             PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
@@ -162,23 +175,9 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
-            full_query_boosts=(
-                apply_conflict_wildcard_boosts(
-                    solr.get_name_search_full_query_boost(value),
-                    wildcard.leading,
-                )
-                + (
-                    # Exact phrase boost: when the caller supplies an exact_phrase, strongly
-                    # prefer names that contain it as a phrase.  Strategy A (boost, not filter)
-                    # keeps all conflicts visible while surfacing phrase-matching names first.
-                    [{
-                        "field": NameField.NAME_Q_SINGLE,
-                        "value": exact_phrase,
-                        "boost": "50",
-                    }]
-                    if (exact_phrase := request_json.get("exact_phrase", "").strip().lower())
-                    else []
-                )
+            full_query_boosts=apply_conflict_wildcard_boosts(
+                solr.get_name_search_full_query_boost(value),
+                wildcard.leading,
             ),
             # TODO: add this as LD flag ? names ticket: #32885
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
