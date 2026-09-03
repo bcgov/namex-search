@@ -124,7 +124,16 @@ def possible_conflict_names():
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
-            full_query_boosts=solr.get_name_search_full_query_boost(value),
+            full_query_boosts=(
+                solr.get_name_search_full_query_boost(value) + (
+                    # Exact phrase boost: when the caller supplies an exact_phrase, strongly
+                    # prefer names that contain it as a phrase.  Strategy A (boost, not filter)
+                    # keeps all conflicts visible while surfacing phrase-matching names first.
+                    [f'{NameField.NAME_Q_SINGLE.value}:"{exact_phrase}"^50']
+                    if (exact_phrase := request_json.get("exact_phrase", "").strip().lower())
+                    else []
+                )
+            ),
             # TODO: add this as LD flag ? names ticket: #32885
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
         )
