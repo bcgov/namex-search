@@ -31,36 +31,48 @@ BOOT_DISK_IMAGE="cos-121-18867-199-38"
 if [[ "$ENV" == "dev" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-5120"
   BOOT_DISK_SIZE_FOLLOWER="10GiB"
-  FOLLOWER_JVM_MEM="1g"
 
   MACHINE_TYPE_LEADER="custom-1-5120"
   BOOT_DISK_SIZE_LEADER="10GiB"
-  LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "test" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-5120"
   BOOT_DISK_SIZE_FOLLOWER="10GiB"
-  FOLLOWER_JVM_MEM="1g"
 
   MACHINE_TYPE_LEADER="custom-1-5120"
   BOOT_DISK_SIZE_LEADER="10GiB"
-  LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "sandbox" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-6656"
   BOOT_DISK_SIZE_FOLLOWER="24GiB"
-  FOLLOWER_JVM_MEM="1g"
 
   MACHINE_TYPE_LEADER="custom-1-6656"
   BOOT_DISK_SIZE_LEADER="24GiB"
-  LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "prod" ]]; then
   MACHINE_TYPE_FOLLOWER="e2-standard-4"
   BOOT_DISK_SIZE_FOLLOWER="24GiB"
-  FOLLOWER_JVM_MEM="4g"
 
   MACHINE_TYPE_LEADER="e2-standard-4"
   BOOT_DISK_SIZE_LEADER="40GiB"
-  LEADER_JVM_MEM="4g"
 fi
+
+# ============================================================
+#  COMPUTE JVM MEMORY (50% of machine RAM)
+# ============================================================
+compute_jvm_mem() {
+  local mt="$1"
+  if [[ "$mt" =~ ^e2-standard-([0-9]+)$ ]]; then
+    g=$(( ${BASH_REMATCH[1]} * 4 ))
+  elif [[ "$mt" =~ ^custom-[0-9]+-([0-9]+)$ ]]; then
+    g=$(( (${BASH_REMATCH[1]} / 1024) ))
+  else
+    echo "ERROR: Unsupported machine type for JVM compute: $mt" >&2
+    exit 1
+  fi
+  g=$(( g / 2 ))
+  echo "${g}g"
+}
+
+FOLLOWER_JVM_MEM="$(compute_jvm_mem "$MACHINE_TYPE_FOLLOWER")"
+LEADER_JVM_MEM="$(compute_jvm_mem "$MACHINE_TYPE_LEADER")"
 
 FOLLOWER_ROLE="follower"
 LEADER_ROLE="leader"
