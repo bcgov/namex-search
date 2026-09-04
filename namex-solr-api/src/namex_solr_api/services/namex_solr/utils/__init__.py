@@ -32,6 +32,11 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 """This module manages util methods for the NameX solr service."""
+from .analysis_helpers import (
+    analyze_stemmed_agro_tokens,
+    parse_stemmed_tokens,
+    synonym_members_in_name,
+)
 from .formatting_helpers import (
     DISTINCTIVE_COVERAGE_BOOST_WEIGHT,
     INITIALS_GROUP_BOOST_WEIGHT,
@@ -46,11 +51,6 @@ from .formatting_helpers import (
     prep_query_str_namex,
     remove_designation_tokens,
     strip_trailing_designations,
-)
-from .analysis_helpers import (
-    analyze_stemmed_agro_tokens,
-    parse_stemmed_tokens,
-    synonym_members_in_name,
 )
 from .namex_search_helper import namex_search
 from .synonym_helpers import get_synonyms
