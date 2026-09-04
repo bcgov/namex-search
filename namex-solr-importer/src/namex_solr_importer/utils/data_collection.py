@@ -64,13 +64,25 @@ def collect_colin_data():
         FROM corporation c
         join corp_state cs on cs.corp_num = c.corp_num
         join corp_op_state cos on cos.state_typ_cd = cs.state_typ_cd
-        join corp_name cn on cn.corp_num = c.corp_num
+        join (
+            select cn_sub.corp_num, cn_sub.corp_nme, cn_sub.corp_name_typ_cd, row_number()
+            over (partition by cn_sub.corp_num
+                  order by
+                    CASE
+                        when c2.corp_typ_cd = 'A' and cn_sub.corp_name_typ_cd = 'AS' then 1
+                        when cn_sub.corp_name_typ_cd in ('CO', 'NB') then 2
+                        else 3
+                        end
+                  ) rn
+            from corp_name cn_sub
+            join corporation c2 on c2.corp_num = cn_sub.corp_num
+            where cn_sub.end_event_id is null
+                and cn_sub.corp_name_typ_cd in ('CO', 'NB', 'AS')
+        ) cn on cn.corp_num = c.corp_num and cn.rn = 1
         left join (select * from jurisdiction where end_event_id is null) j on j.corp_num = c.corp_num
         WHERE c.corp_typ_cd in ({_get_stringified_list_for_sql("CONFLICT_LEGAL_TYPES")})
             and c.corp_typ_cd not in ({_get_stringified_list_for_sql("MODERNIZED_LEGAL_TYPES")})
             and cs.end_event_id is null
-            and cn.end_event_id is null
-            and cn.corp_name_typ_cd in ('CO', 'NB')
             and cos.op_state_typ_cd in ('ACT','HLD','HIS')
         """)
     return cursor
