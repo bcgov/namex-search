@@ -51,7 +51,7 @@ RUN apt-get update && apt-get install -y libaio1 gdb wget unzip \
   && echo /opt/oracle/instantclient* > /etc/ld.so.conf.d/oracle-instantclient.conf \
   && ldconfig
 
-RUN apt-get update && apt-get upgrade -y \
+RUN apt-get update \
   && apt-get install --no-install-recommends -y \
     bash \
     brotli \
