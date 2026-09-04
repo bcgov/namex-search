@@ -154,13 +154,18 @@ class QueryBuilder:
         synonym_info: dict,
         synonym_fields: dict[BaseEnum, str],
         is_child_search: bool,
-        boost_fields: dict[BaseEnum, int]
+        boost_fields: dict[BaseEnum, int],
+        stemmed_terms: list[str] | None = None,
     ):
         """Return the term clause with the added synonym clauses."""
         term = terms[term_index]
         for field, level in synonym_fields.items():
             if not synonym_info.get(field):
-                synonym_info[field] = {"synonym_terms": [], "synonym_start_index": None}
+                synonym_info[field] = {
+                    "synonym_terms": [],
+                    "synonym_start_index": None,
+                    "synonym_members": [],
+                }
             synonym_terms = synonym_info[field]["synonym_terms"]
             synonym_start_index = synonym_info[field]["synonym_start_index"]
 
@@ -172,12 +177,20 @@ class QueryBuilder:
 
             synonym_clause = ""
             if synonym_terms and term_index < synonym_start_index + len(synonym_terms):
-                # a synonym matched on a previous term and includes the current term (multi word synonym)
-                synonym_clause = f"{field_value}:{' '.join(synonym_terms)}"
-            elif new_synonym_terms := self.find_synonym_terms(term, term_index, terms, field):
-                synonym_info[field]["synonym_terms"] = new_synonym_terms
-                synonym_info[field]["synonym_start_index"] = term_index
-                synonym_clause = f"{field_value}:{' '.join(new_synonym_terms)}"
+                synonym_clause = self._synonym_field_clause(
+                    field_value, synonym_terms, synonym_info[field].get("synonym_members") or []
+                )
+            else:
+                new_synonym_terms, new_members = self.find_synonym_terms(
+                    term, term_index, terms, field, stemmed_terms
+                )
+                if new_synonym_terms:
+                    synonym_info[field]["synonym_terms"] = new_synonym_terms
+                    synonym_info[field]["synonym_start_index"] = term_index
+                    synonym_info[field]["synonym_members"] = new_members
+                    synonym_clause = self._synonym_field_clause(
+                        field_value, new_synonym_terms, new_members
+                    )
 
             if synonym_clause:
                 if field in boost_fields:
@@ -193,60 +206,122 @@ class QueryBuilder:
                          fuzzy_fields: dict[BaseEnum, dict[str, int]],
                          synonym_fields: dict[BaseEnum, str],
                          is_child_search: bool,
-                         clause_bridge = "AND") -> dict[str, list[str]]:
+                         clause_bridge="AND",
+                         stemmed_terms: list[str] | None = None) -> dict:
         """Return a solr query with filters for each subsequent term."""
         terms = query["value"].split()
+        if not stemmed_terms or len(stemmed_terms) != len(terms):
+            stemmed_terms = terms
         synonym_info = {}
         query_clause = ""
-        # Each term in the searched 'value' must match on at least one of:
-        # 'fields', 'fuzzy_fields' or 'synonym_fields' query clauses.
-        # This loop adds clauses for the all the given fields for each term
         for term_index, term in enumerate(terms):
-            # Get the base clause, which references the fields, fuzzy fields and adds the boost clause for ordering
             term_clause = self.build_term_clause(term, fields, boost_fields, fuzzy_fields, is_child_search)
-
-            # Add the synonym field clauses
-            term_clause = self.build_term_synonym_clauses(term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search, boost_fields)
-
-            # Join the term clause to the full query
+            term_clause = self.build_term_synonym_clauses(
+                term_clause,
+                terms,
+                term_index,
+                synonym_info,
+                synonym_fields,
+                is_child_search,
+                boost_fields,
+                stemmed_terms,
+            )
             query_clause = self.join_clause(query_clause, f"({term_clause})", clause_bridge)
 
-        # Add extra filters if applicable
         filters = self.build_filter_clause(query, is_child_search)
 
         if not query_clause:
-            # handle empty string provided for query value
             query_clause = '""'
 
-        return {"query": query_clause, "filter": filters}
-    
-    def find_synonym_terms(self, start_term: str, start_term_index: int, terms: list[str], field: BaseEnum) -> list[str]:
-        """Return the synonym terms that match the starting term and following query terms."""
-        # NOTE: when this is in a common space the model will be a common dependency similar to whats been done in lear
+        return {
+            "query": query_clause,
+            "filter": filters,
+            "synonym_members": self._collect_synonym_members(synonym_info),
+        }
+
+    def find_synonym_terms(
+        self,
+        start_term: str,
+        start_term_index: int,
+        terms: list[str],
+        field: BaseEnum,
+        stemmed_terms: list[str] | None = None,
+    ) -> tuple[list[str], list[str]]:
+        """Return matching synonym key tokens and the group's member list."""
         from namex_solr_api.models import SolrSynonymList
 
-        # the best match will be the one with the most words (i.e. british columbia > british)
-        best_synonym_match_terms = []
-        # check if term exists inside a synonym
-        if synonyms := SolrSynonymList.find_all_beginning_with_phrase(start_term, self.synonym_field_map[field]):
-            for synonym_terms in [syn.synonym.split() for syn in synonyms]:
-                if len(synonym_terms) > len(terms[start_term_index:]) or len(synonym_terms) == 0:
-                    # not possible to be this synonym
+        synonym_type = self.synonym_field_map[field]
+        stemmed_terms = stemmed_terms or terms
+        start_stem = (
+            stemmed_terms[start_term_index]
+            if start_term_index < len(stemmed_terms)
+            else start_term
+        )
+        candidates = []
+        seen_keys = set()
+        for phrase in (start_term, start_stem):
+            if not phrase:
+                continue
+            for row in SolrSynonymList.find_all_beginning_with_phrase(phrase, synonym_type):
+                if row.synonym in seen_keys:
                     continue
-                if len(synonym_terms) < len(best_synonym_match_terms):
-                    # this is a shorter synonym than one thats already matched so skip
-                    continue
+                seen_keys.add(row.synonym)
+                candidates.append(row)
 
-                # see if all terms of the synonym are in the query
-                full_synonym_in_query = True
-                for i, synonym_term in enumerate(synonym_terms):
-                    if terms[start_term_index + i].lower() != synonym_term.lower():
-                        full_synonym_in_query = False
-                        break
-                if full_synonym_in_query:
-                    best_synonym_match_terms = synonym_terms
+        best_key_terms: list[str] = []
+        best_members: list[str] = []
+        for row in candidates:
+            key_terms = row.synonym.split()
+            if not key_terms or len(key_terms) > len(terms[start_term_index:]):
+                continue
+            if best_key_terms and len(key_terms) < len(best_key_terms):
+                continue
+            if self._query_covers_synonym_key(key_terms, start_term_index, terms, stemmed_terms):
+                best_key_terms = key_terms
+                best_members = [row.synonym, *(row.synonym_list or [])]
+        return best_key_terms, best_members
 
-        return best_synonym_match_terms
+    @staticmethod
+    def _query_covers_synonym_key(
+        key_terms: list[str],
+        start_index: int,
+        terms: list[str],
+        stemmed_terms: list[str],
+    ) -> bool:
+        """True if each key token equals the query token or its agro stem."""
+        for i, key_term in enumerate(key_terms):
+            query_term = terms[start_index + i]
+            query_stem = (
+                stemmed_terms[start_index + i]
+                if start_index + i < len(stemmed_terms)
+                else query_term
+            )
+            if query_term.lower() != key_term.lower() and query_stem.lower() != key_term.lower():
+                return False
+        return True
+
+    @staticmethod
+    def _synonym_field_clause(field_value: str, key_terms: list[str], members: list[str]) -> str:
+        """Emit the synonym key, plus one graph member so stems-only keys still hit."""
+        if len(key_terms) != 1:
+            return f"{field_value}:{' '.join(key_terms)}"
+        key = key_terms[0]
+        for member in members:
+            tokens = str(member).split()
+            if len(tokens) == 1 and tokens[0].lower() != key.lower():
+                return f"{field_value}:({key} OR {tokens[0]})"
+        return f"{field_value}:{key}"
+
+    @staticmethod
+    def _collect_synonym_members(synonym_info: dict) -> list[str]:
+        members = []
+        seen = set()
+        for field_info in synonym_info.values():
+            for member in field_info.get("synonym_members") or []:
+                if member and member not in seen:
+                    seen.add(member)
+                    members.append(member)
+        return members
 
     @staticmethod
     def build_facet(field: BaseEnum, is_nested: bool) -> dict[str, dict]:

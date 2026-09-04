@@ -72,6 +72,7 @@ class Solr:
         self.reload_url = "{url}/admin/cores?action=RELOAD&core={core}"
         self.replication_url = "{url}/{core}/replication"
         self.search_url = "{url}/{core}/query"
+        self.analysis_url = "{url}/{core}/analysis/field"
         self.synonyms_url = "{url}/{core}/schema/analysis/synonyms"
         self.update_url = "{url}/{core}/update?commit=true&overwrite=true&wt=json"
         self.bulk_update_url = "{url}/{core}/update?overwrite=true&wt=json"
@@ -152,6 +153,25 @@ class Solr:
                 msg = response.json().get("error", {}).get("msg", msg)
             current_app.logger.debug(msg)
             raise SolrException(error=msg, status_code=status_code) from err
+
+    def analyze_field(self, field_value: str, field_type: str = "text_stemmed_agro") -> dict:
+        """Return Solr analysis/field JSON, or {} if analysis is unavailable."""
+        try:
+            response = self.call_solr(
+                "GET",
+                self.analysis_url,
+                params={
+                    "wt": "json",
+                    "analysis.fieldvalue": field_value,
+                    "analysis.fieldtype": field_type,
+                },
+                leader=False,
+                timeout=5,
+            )
+            return response.json()
+        except Exception:
+            current_app.logger.warning("Solr analysis unavailable; synonym stem fallback skipped.")
+            return {}
 
     def create_or_update_synonyms(self, synonym_type: BaseEnum, synonyms: dict[str: list[str]]):
         """Create or update solr docs in the core."""

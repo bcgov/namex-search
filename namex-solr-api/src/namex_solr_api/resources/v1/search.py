@@ -54,6 +54,7 @@ from namex_solr_api.services.namex_solr.utils import (
     parse_conflict_wildcard,
     prep_query_str_namex,
     remove_designation_tokens,
+    synonym_members_in_name,
 )
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
@@ -226,6 +227,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     exclude_sub_types=params.exclude_sub_types,
                 ), solr, True, strict)
                 solr_highlighting = highlight_results.get("highlighting", {})
+        resolved_synonym_members = results.get("synonym_members") or []
         docs = []
         for result in results.get("response", {}).get("docs"):
             def split_highlights(highlights: list[str]):
@@ -254,6 +256,11 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value, []):
                 other_highlights = exact_highlights + stem_highlights + phonetic_highlights
                 synonym_highlights = [x.upper() for x in synonym_highlights if x.upper() not in other_highlights]
+            other_highlights = set(exact_highlights + stem_highlights + phonetic_highlights + synonym_highlights)
+            for member_token in synonym_members_in_name(result.get("name", ""), resolved_synonym_members):
+                if member_token not in other_highlights:
+                    synonym_highlights.append(member_token)
+                    other_highlights.add(member_token)
             docs.append({
                 **result,
                 "name": result["name"].upper(),
