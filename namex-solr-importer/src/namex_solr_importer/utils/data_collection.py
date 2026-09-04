@@ -148,10 +148,9 @@ def collect_synonyms_data() -> CursorResult:
     current_app.logger.debug("Connecting to NameX Postgres instance...")
     conn = namex_db.db.engine.connect()
     current_app.logger.debug("Collecting Synonym data...")
-    # TODO: verify can just collect 'synonym' table / 'synonyms_text' column (there's also synonym_orig / stems_text)
     return conn.execute(
         text("""
-        SELECT synonyms_text
+        SELECT synonyms_text, stems_text
         FROM synonym
         WHERE enabled='t'
         """)
