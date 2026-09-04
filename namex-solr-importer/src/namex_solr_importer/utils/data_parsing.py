@@ -77,12 +77,20 @@ def parse_conflict(data: dict, conflict_type: str) -> PossibleConflict:
     )
 
 
-def parse_synonyms(data: list[tuple[str]]) -> dict[str, list[str]]:
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def parse_synonyms(data: list) -> dict[str, list[str]]:
     """Parse the synonym data in preparation for namex solr api update call."""
-    # i.e. [('test, tester, testing',), ('something, somethingelse',)] -> {'test': ['test', 'tester'...], 'something': [...]}
     parsed_synonyms = {}
-    for synonym_list in data:
-        parsed_synonyms[synonym_list[0].split(",")[0].strip()] = [
-            x.strip() for x in synonym_list[0].split(",")
-        ]
+    for row in data:
+        members = _split_csv(row[0] if row else None)
+        if not members:
+            continue
+        stems = _split_csv(row[1] if len(row) > 1 else None)
+        for key in [members[0], *stems]:
+            parsed_synonyms[key] = members
     return parsed_synonyms
