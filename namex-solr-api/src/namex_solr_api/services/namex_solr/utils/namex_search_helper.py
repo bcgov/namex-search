@@ -39,6 +39,7 @@ from namex_solr_api.services.namex_solr import NamexSolr
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 
 from .add_category_filters import add_category_filters
+from .analysis_helpers import analyze_stemmed_agro_tokens
 
 
 def format_full_query_boost(info: dict) -> str:
@@ -63,7 +64,12 @@ def format_full_query_boost(info: dict) -> str:
 
 def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
     """Return the list of possible conflicts from Solr that match the query."""
-    # initialize payload with base doc query (init query / filter)
+    query_value = params.query.get("value") or ""
+    terms = query_value.split()
+    stemmed_terms = analyze_stemmed_agro_tokens(solr, query_value)
+    if len(stemmed_terms) != len(terms):
+        stemmed_terms = terms
+
     initial_queries = solr.query_builder.build_base_query(
         query=params.query,
         fields=params.query_fields,
@@ -71,7 +77,9 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_
         fuzzy_fields=params.query_fuzzy_fields,
         synonym_fields=params.query_synonym_fields,
         is_child_search=is_name_search,
-        clause_bridge="AND" if is_strict else "OR")
+        clause_bridge="AND" if is_strict else "OR",
+        stemmed_terms=stemmed_terms)
+    synonym_members = initial_queries.pop("synonym_members", [])
 
     # boosts for term order result ordering
     for info in params.full_query_boosts:
@@ -126,6 +134,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_
                     for highlight in field_highlights:
                         parsed_highlighting[result_id][field_enum.value] += namex_search_parse_highlighting(highlight)
     resp['highlighting'] = parsed_highlighting
+    resp['synonym_members'] = synonym_members
     return resp
 
 

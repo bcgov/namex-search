@@ -47,5 +47,10 @@ from .formatting_helpers import (
     remove_designation_tokens,
     strip_trailing_designations,
 )
+from .analysis_helpers import (
+    analyze_stemmed_agro_tokens,
+    parse_stemmed_tokens,
+    synonym_members_in_name,
+)
 from .namex_search_helper import namex_search
 from .synonym_helpers import get_synonyms
