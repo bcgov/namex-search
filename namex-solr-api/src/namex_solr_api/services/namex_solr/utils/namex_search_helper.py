@@ -62,24 +62,41 @@ def format_full_query_boost(info: dict) -> str:
     return f"({clause}^{boost})"
 
 
+def _apply_full_query_boosts(query_clause: str, boosts: list) -> str:
+    for info in boosts:
+        query_clause += f" OR {format_full_query_boost(info)}"
+    return query_clause
+
+
 def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
     """Return the list of possible conflicts from Solr that match the query."""
     # initialize payload with base doc query (init query / filter)
     stemmed_terms = analyze_stemmed_agro_tokens(solr, params.query.get("value", ""))
-    initial_queries = solr.query_builder.build_base_query(
-        query=params.query,
-        fields=params.query_fields,
-        boost_fields=params.query_boost_fields,
-        fuzzy_fields=params.query_fuzzy_fields,
-        synonym_fields=params.query_synonym_fields,
-        is_child_search=is_name_search,
-        clause_bridge="AND" if is_strict else "OR",
-        stemmed_terms=stemmed_terms,
+    query_kwargs = {
+        "query": params.query,
+        "fields": params.query_fields,
+        "boost_fields": params.query_boost_fields,
+        "fuzzy_fields": params.query_fuzzy_fields,
+        "synonym_fields": params.query_synonym_fields,
+        "is_child_search": is_name_search,
+        "clause_bridge": "AND" if is_strict else "OR",
+        "stemmed_terms": stemmed_terms,
+    }
+    # Retrieval uses {!raw} so query-time ALL does not inflate scores.
+    initial_queries = solr.query_builder.build_base_query(**query_kwargs, synonym_as_raw=True)
+    initial_queries["query"] = _apply_full_query_boosts(
+        initial_queries["query"], params.full_query_boosts
     )
 
-    # boosts for term order result ordering
-    for info in params.full_query_boosts:
-        initial_queries["query"] += f" OR {format_full_query_boost(info)}"
+    highlight_query = None
+    if params.highlighted_fields:
+        # hl.q keeps the analyzed synonym clause so TRANSPORT still golds.
+        highlight_queries = solr.query_builder.build_base_query(
+            **query_kwargs, synonym_as_raw=False
+        )
+        highlight_query = _apply_full_query_boosts(
+            highlight_queries["query"], params.full_query_boosts
+        )
 
     # add defaults
     parent_field = NameField.PARENT_TYPE.value if is_name_search else PCField.TYPE.value
@@ -94,7 +111,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_
     if params.highlighted_fields:
         solr_payload = {
             **solr_payload,
-            **namex_search_highlighting(params)
+            **namex_search_highlighting(params, highlight_query)
         }
     # base doc faceted filters
     add_category_filters(solr_payload=solr_payload,
@@ -133,18 +150,19 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_
     return resp
 
 
-def namex_search_highlighting(params: QueryParams):
+def namex_search_highlighting(params: QueryParams, highlight_query: str | None = None):
     """Return the the highlighting params for the query."""
-    return {
-        "params": {
-            "hl": "on",
-            "hl.method": "unified",
-            "hl.requireFieldMatch": "true",
-            "hl.tag.pre": "|||",
-            "hl.tag.post": "|||",
-            "hl.fl": ",".join([x.value for x in params.highlighted_fields])
-        }
+    hl_params = {
+        "hl": "on",
+        "hl.method": "unified",
+        "hl.requireFieldMatch": "true",
+        "hl.tag.pre": "|||",
+        "hl.tag.post": "|||",
+        "hl.fl": ",".join([x.value for x in params.highlighted_fields]),
     }
+    if highlight_query:
+        hl_params["hl.q"] = highlight_query
+    return {"params": hl_params}
 
 
 def namex_search_parse_highlighting(highlighted_value: str) -> list[str]:
