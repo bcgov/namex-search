@@ -9,6 +9,10 @@ JVM_MEM="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/
 ROLE="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/role -H 'Metadata-Flavor: Google')"
 ENV="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/env -H 'Metadata-Flavor: Google')"
 LABEL="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/label -H 'Metadata-Flavor: Google')"
+FILTERCACHE_MAXRAM="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/filtercache_maxram -H 'Metadata-Flavor: Google' || true)"
+QRCACHE_MAXRAM="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/qrcache_maxram -H 'Metadata-Flavor: Google' || true)"
+DOCCACHE_MAXRAM="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/doccache_maxram -H 'Metadata-Flavor: Google' || true)"
+PERSEGCACHE_MAXRAM="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/persegcache_maxram -H 'Metadata-Flavor: Google' || true)"
 
 IMAGE_PROJECT="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/image_project -H 'Metadata-Flavor: Google')"
 IMAGE_REPO="$(curl -fs http://metadata.google.internal/computeMetadata/v1/instance/attributes/image_repo -H 'Metadata-Flavor: Google')"
@@ -19,6 +23,12 @@ CONTAINER_NAME="solr-container"
 
 IMAGE_PATH="${REGION}-docker.pkg.dev/${IMAGE_PROJECT}/${IMAGE_REPO}/${IMAGE}"
 SOLR_ENV_SETTINGS="${ENV},label=${LABEL}"
+
+SOLR_CACHE_OPTS=""
+[ -n "$FILTERCACHE_MAXRAM" ] && SOLR_CACHE_OPTS="$SOLR_CACHE_OPTS -Dsolr.filterCache.maxRamMB=$FILTERCACHE_MAXRAM"
+[ -n "$QRCACHE_MAXRAM" ]     && SOLR_CACHE_OPTS="$SOLR_CACHE_OPTS -Dsolr.queryResultCache.maxRamMB=$QRCACHE_MAXRAM"
+[ -n "$DOCCACHE_MAXRAM" ]    && SOLR_CACHE_OPTS="$SOLR_CACHE_OPTS -Dsolr.documentCache.maxRamMB=$DOCCACHE_MAXRAM"
+[ -n "$PERSEGCACHE_MAXRAM" ] && SOLR_CACHE_OPTS="$SOLR_CACHE_OPTS -Dsolr.perSegFilter.maxRamMB=$PERSEGCACHE_MAXRAM"
 
 echo "=== Solr startup script ==="
 echo "ROLE=${ROLE}"
@@ -85,7 +95,7 @@ else
 
   SOLR_OPTS_VAR='$SOLR_OPTS'
 
-  echo "SOLR_OPTS=\"$SOLR_OPTS_VAR -Dsolr.environment=$SOLR_ENV_SETTINGS\"" \
+  echo "SOLR_OPTS=\"$SOLR_OPTS_VAR -Dsolr.environment=$SOLR_ENV_SETTINGS$SOLR_CACHE_OPTS\"" \
     >> "$HOST_MOUNT_PATH_ENV/solr.in.sh"
   echo "SOLR_JAVA_MEM=\"-Xms$JVM_MEM -Xmx$JVM_MEM\"" \
     >> "$HOST_MOUNT_PATH_ENV/solr.in.sh"
@@ -97,7 +107,7 @@ fi
 ### START SOLR WITH VOLUME
 ### ============================================================
 
-SOLR_OPTS="-Djetty.host=0.0.0.0 -Dsolr.environment=$SOLR_ENV_SETTINGS"
+SOLR_OPTS="-Djetty.host=0.0.0.0"
 
 docker run -d \
   --name=$CONTAINER_NAME \

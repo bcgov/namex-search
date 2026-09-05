@@ -5,7 +5,7 @@ set -euo pipefail
 #  FLAGS
 # ============================================================
 TEMPLATES_ONLY="false"
-UPDATE_VM="true"
+UPDATE_VM="false"
 if [[ "${1:-}" == "--templates-only" ]]; then
   TEMPLATES_ONLY="true"
 elif [[ "${1:-}" == "--update-vm" ]]; then
@@ -15,8 +15,8 @@ fi
 # ============================================================
 #  CONFIG — change ENV as needed
 # ============================================================
-ENV="prod"   # dev / test / prod
-LABEL="Prod"
+ENV="test"   # dev / test / prod
+LABEL="Test"
 PROJECT="a083gt"
 PROJECT_ID="${PROJECT}-${ENV}"
 APP="namex"
@@ -55,21 +55,37 @@ SERVICE_ACCOUNT="sa-solr-vm@${PROJECT_ID}.iam.gserviceaccount.com"
 if [[ "$ENV" == "dev" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-5120"
   BOOT_DISK_SIZE_FOLLOWER="10GiB"
+  FOLLOWER_FILTERCACHE_MAXRAM="50"
+  FOLLOWER_QRCACHE_MAXRAM="25"
+  FOLLOWER_DOCCACHE_MAXRAM="20"
+  FOLLOWER_PERSEGCACHE_MAXRAM="30"
   MACHINE_TYPE_LEADER="custom-1-5120"
   BOOT_DISK_SIZE_LEADER="10GiB"
 elif [[ "$ENV" == "test" ]]; then
-  MACHINE_TYPE_FOLLOWER="custom-1-5120"
+  MACHINE_TYPE_FOLLOWER="custom-1-6656"
   BOOT_DISK_SIZE_FOLLOWER="10GiB"
+  FOLLOWER_FILTERCACHE_MAXRAM="50"
+  FOLLOWER_QRCACHE_MAXRAM="25"
+  FOLLOWER_DOCCACHE_MAXRAM="20"
+  FOLLOWER_PERSEGCACHE_MAXRAM="30"
   MACHINE_TYPE_LEADER="custom-1-5120"
   BOOT_DISK_SIZE_LEADER="10GiB"
 elif [[ "$ENV" == "sandbox" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-6656"
   BOOT_DISK_SIZE_FOLLOWER="24GiB"
+  FOLLOWER_FILTERCACHE_MAXRAM="100"
+  FOLLOWER_QRCACHE_MAXRAM="50"
+  FOLLOWER_DOCCACHE_MAXRAM="30"
+  FOLLOWER_PERSEGCACHE_MAXRAM="60"
   MACHINE_TYPE_LEADER="custom-1-6656"
   BOOT_DISK_SIZE_LEADER="24GiB"
 elif [[ "$ENV" == "prod" ]]; then
   MACHINE_TYPE_FOLLOWER="e2-standard-8"
   BOOT_DISK_SIZE_FOLLOWER="24GiB"
+  FOLLOWER_FILTERCACHE_MAXRAM="2000"
+  FOLLOWER_QRCACHE_MAXRAM="500"
+  FOLLOWER_DOCCACHE_MAXRAM="200"
+  FOLLOWER_PERSEGCACHE_MAXRAM="500"
   MACHINE_TYPE_LEADER="e2-standard-4"
   BOOT_DISK_SIZE_LEADER="40GiB"
 fi
@@ -89,7 +105,7 @@ compute_jvm_mem() {
     echo "ERROR: Unsupported machine type for JVM compute: $mt" >&2
     exit 1
   fi
-  g=$(( g / 2 ))
+  g=$(( g / 3 ))
   echo "${g}g"
 }
 
@@ -174,7 +190,7 @@ if [[ "$ENV" != "dev" ]]; then
     --machine-type="$MACHINE_TYPE_FOLLOWER" \
     --network-interface=network=projects/$VPC_HOST_PROJECT_ID/global/networks/$VPC_NETWORK,subnet=projects/$VPC_HOST_PROJECT_ID/regions/$REGION/subnetworks/$VPC_SUBNET,stack-type=IPV4_ONLY,no-address \
     --metadata-from-file=startup-script="$PATH_TO_STARTUP_SCRIPT" \
-    --metadata=google-logging-enabled=true,role=$FOLLOWER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$FOLLOWER_JVM_MEM,image=$FOLLOWER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,block-project-ssh-keys=TRUE \
+    --metadata=google-logging-enabled=true,role=$FOLLOWER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$FOLLOWER_JVM_MEM,filtercache_maxram=$FOLLOWER_FILTERCACHE_MAXRAM,qrcache_maxram=$FOLLOWER_QRCACHE_MAXRAM,doccache_maxram=$FOLLOWER_DOCCACHE_MAXRAM,persegcache_maxram=$FOLLOWER_PERSEGCACHE_MAXRAM,image=$FOLLOWER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,block-project-ssh-keys=TRUE \
     --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --service-account="$SERVICE_ACCOUNT" \

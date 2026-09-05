@@ -319,7 +319,7 @@
          is considered "slow" and log that request at WARN level so we can
          easily identify slow queries.
     -->
-    <slowQueryThresholdMillis>-1</slowQueryThresholdMillis>
+    <slowQueryThresholdMillis>2000</slowQueryThresholdMillis>
 
 
     <!-- Solr Internal Query Caches
@@ -374,8 +374,8 @@
     <!-- custom cache currently used by block join -->
     <cache name="perSegFilter"
       class="solr.CaffeineCache"
-      size="10"
-      initialSize="0"
+      size="256"
+      initialSize="128"
       autowarmCount="10"
       regenerator="solr.NoOpRegenerator" />
 
