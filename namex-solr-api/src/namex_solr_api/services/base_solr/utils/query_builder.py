@@ -36,6 +36,16 @@ import re
 
 from namex_solr_api.common.base_enum import BaseEnum
 
+# NameX function skip words (same set as namex-solr skipwords.txt).
+# Raw synonym lookup bypasses the query-time stop filter, so these keys
+# must not be emitted on the retrieval query.
+SYNONYM_SKIP_WORDS = frozenset({
+    "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in",
+    "into", "is", "it", "no", "not", "o", "on", "or", "such", "that", "the",
+    "their", "then", "there", "these", "they", "this", "to", "of",
+})
+_RAW_SYNONYM_TOKEN = re.compile(r"^[a-z0-9]+(?:'[a-z0-9]+)?$")
+
 
 class QueryBuilder:
     """Manages shared query building code."""
@@ -156,6 +166,7 @@ class QueryBuilder:
         is_child_search: bool,
         boost_fields: dict[BaseEnum, int],
         stemmed_terms: list[str] | None = None,
+        synonym_as_raw: bool = False,
     ):
         """Return the term clause with the added synonym clauses."""
         term = terms[term_index]
@@ -174,13 +185,17 @@ class QueryBuilder:
             synonym_clause = ""
             if synonym_terms and term_index < synonym_start_index + len(synonym_terms):
                 # a synonym matched on a previous term and includes the current term (multi word synonym)
-                synonym_clause = f"{field_value}:{' '.join(synonym_terms)}"
+                synonym_clause = self._synonym_field_clause(
+                    field.value, field_value, synonym_terms, synonym_as_raw
+                )
             elif new_synonym_terms := self.find_synonym_terms(
                 term, term_index, terms, field, stemmed_terms
             ):
                 synonym_info[field]["synonym_terms"] = new_synonym_terms
                 synonym_info[field]["synonym_start_index"] = term_index
-                synonym_clause = f"{field_value}:{' '.join(new_synonym_terms)}"
+                synonym_clause = self._synonym_field_clause(
+                    field.value, field_value, new_synonym_terms, synonym_as_raw
+                )
 
             if synonym_clause:
                 if field in boost_fields:
@@ -197,8 +212,13 @@ class QueryBuilder:
                          synonym_fields: dict[BaseEnum, str],
                          is_child_search: bool,
                          clause_bridge="AND",
-                         stemmed_terms: list[str] | None = None) -> dict[str, list[str]]:
-        """Return a solr query with filters for each subsequent term."""
+                         stemmed_terms: list[str] | None = None,
+                         synonym_as_raw: bool = False) -> dict[str, list[str]]:
+        """Return a solr query with filters for each subsequent term.
+
+        synonym_as_raw=True uses {!raw} so the query-time ALL graph does not
+        expand into scoring. Use False for hl.q so family words still gold.
+        """
         terms = query["value"].split()
         if not stemmed_terms or len(stemmed_terms) != len(terms):
             stemmed_terms = terms
@@ -213,7 +233,8 @@ class QueryBuilder:
 
             # Add the synonym field clauses
             term_clause = self.build_term_synonym_clauses(
-                term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search, boost_fields, stemmed_terms
+                term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search,
+                boost_fields, stemmed_terms, synonym_as_raw,
             )
 
             # Join the term clause to the full query
@@ -240,6 +261,8 @@ class QueryBuilder:
         from namex_solr_api.models import SolrSynonymList
 
         stemmed_terms = stemmed_terms or terms
+        if self._is_synonym_skip_token(start_term):
+            return []
         start_stem = (
             stemmed_terms[start_term_index]
             if start_term_index < len(stemmed_terms)
@@ -248,7 +271,7 @@ class QueryBuilder:
         candidates = []
         seen_keys = set()
         for phrase in (start_term, start_stem):
-            if not phrase:
+            if not phrase or self._is_synonym_skip_token(phrase):
                 continue
             for row in SolrSynonymList.find_all_beginning_with_phrase(
                 phrase, self.synonym_field_map[field]
@@ -263,6 +286,8 @@ class QueryBuilder:
             synonym_terms = row.synonym.split()
             if not synonym_terms or len(synonym_terms) > len(terms[start_term_index:]):
                 continue
+            if any(self._is_synonym_skip_token(token) for token in synonym_terms):
+                continue
             if best_synonym_match_terms and len(synonym_terms) < len(best_synonym_match_terms):
                 continue
             if self._query_covers_synonym_key(
@@ -271,6 +296,36 @@ class QueryBuilder:
                 best_synonym_match_terms = synonym_terms
 
         return best_synonym_match_terms
+
+    @staticmethod
+    def _is_synonym_skip_token(token: str) -> bool:
+        return bool(token) and token.lower() in SYNONYM_SKIP_WORDS
+
+    @staticmethod
+    def _synonym_field_clause(
+        leaf_field: str,
+        field_value: str,
+        synonym_terms: list[str],
+        synonym_as_raw: bool,
+    ) -> str:
+        """Build a synonym field clause.
+
+        Analyzed form (highlight): name_q_synonym:carrier — query-time ALL expands.
+        Raw form (retrieval): {!raw f=name_q_synonym}carrier — one indexed term.
+        """
+        if not synonym_as_raw:
+            return f"{field_value}:{' '.join(synonym_terms)}"
+        raw_parts = []
+        for token in synonym_terms:
+            safe = token.lower()
+            if not _RAW_SYNONYM_TOKEN.match(safe):
+                return f"{field_value}:{' '.join(synonym_terms)}"
+            raw_parts.append(f'_query_:"{{!raw f={leaf_field}}}{safe}"')
+        raw_clause = " AND ".join(raw_parts)
+        prefix = field_value[: -len(leaf_field)] if field_value.endswith(leaf_field) else ""
+        if prefix:
+            return f"{prefix}({raw_clause})"
+        return raw_clause
 
     @staticmethod
     def _query_covers_synonym_key(
