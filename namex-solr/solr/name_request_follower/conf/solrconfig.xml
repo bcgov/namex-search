@@ -319,7 +319,7 @@
          is considered "slow" and log that request at WARN level so we can
          easily identify slow queries.
     -->
-    <slowQueryThresholdMillis>2000</slowQueryThresholdMillis>
+    <slowQueryThresholdMillis>30000</slowQueryThresholdMillis>
 
 
     <!-- Solr Internal Query Caches
