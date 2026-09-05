@@ -31,36 +31,64 @@ BOOT_DISK_IMAGE="cos-121-18867-199-38"
 if [[ "$ENV" == "dev" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-5120"
   BOOT_DISK_SIZE_FOLLOWER="10GiB"
-  FOLLOWER_JVM_MEM="1g"
+  FOLLOWER_FILTERCACHE_MAXRAM="50"
+  FOLLOWER_QRCACHE_MAXRAM="25"
+  FOLLOWER_DOCCACHE_MAXRAM="20"
+  FOLLOWER_PERSEGCACHE_MAXRAM="30"
 
   MACHINE_TYPE_LEADER="custom-1-5120"
   BOOT_DISK_SIZE_LEADER="10GiB"
-  LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "test" ]]; then
-  MACHINE_TYPE_FOLLOWER="custom-1-5120"
+  MACHINE_TYPE_FOLLOWER="custom-1-6656"
   BOOT_DISK_SIZE_FOLLOWER="10GiB"
-  FOLLOWER_JVM_MEM="1g"
+  FOLLOWER_FILTERCACHE_MAXRAM="50"
+  FOLLOWER_QRCACHE_MAXRAM="25"
+  FOLLOWER_DOCCACHE_MAXRAM="20"
+  FOLLOWER_PERSEGCACHE_MAXRAM="30"
 
   MACHINE_TYPE_LEADER="custom-1-5120"
   BOOT_DISK_SIZE_LEADER="10GiB"
-  LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "sandbox" ]]; then
   MACHINE_TYPE_FOLLOWER="custom-1-6656"
   BOOT_DISK_SIZE_FOLLOWER="24GiB"
-  FOLLOWER_JVM_MEM="1g"
+  FOLLOWER_FILTERCACHE_MAXRAM="100"
+  FOLLOWER_QRCACHE_MAXRAM="50"
+  FOLLOWER_DOCCACHE_MAXRAM="30"
+  FOLLOWER_PERSEGCACHE_MAXRAM="60"
 
   MACHINE_TYPE_LEADER="custom-1-6656"
   BOOT_DISK_SIZE_LEADER="24GiB"
-  LEADER_JVM_MEM="1g"
 elif [[ "$ENV" == "prod" ]]; then
   MACHINE_TYPE_FOLLOWER="e2-standard-4"
   BOOT_DISK_SIZE_FOLLOWER="24GiB"
-  FOLLOWER_JVM_MEM="4g"
+  FOLLOWER_FILTERCACHE_MAXRAM="2000"
+  FOLLOWER_QRCACHE_MAXRAM="500"
+  FOLLOWER_DOCCACHE_MAXRAM="200"
+  FOLLOWER_PERSEGCACHE_MAXRAM="500"
 
   MACHINE_TYPE_LEADER="e2-standard-4"
   BOOT_DISK_SIZE_LEADER="40GiB"
-  LEADER_JVM_MEM="4g"
 fi
+
+# ============================================================
+#  COMPUTE JVM MEMORY (50% of machine RAM)
+# ============================================================
+compute_jvm_mem() {
+  local mt="$1"
+  if [[ "$mt" =~ ^e2-standard-([0-9]+)$ ]]; then
+    g=$(( ${BASH_REMATCH[1]} * 4 ))
+  elif [[ "$mt" =~ ^custom-[0-9]+-([0-9]+)$ ]]; then
+    g=$(( (${BASH_REMATCH[1]} / 1024) ))
+  else
+    echo "ERROR: Unsupported machine type for JVM compute: $mt" >&2
+    exit 1
+  fi
+  g=$(( g / 2 ))
+  echo "${g}g"
+}
+
+FOLLOWER_JVM_MEM="$(compute_jvm_mem "$MACHINE_TYPE_FOLLOWER")"
+LEADER_JVM_MEM="$(compute_jvm_mem "$MACHINE_TYPE_LEADER")"
 
 FOLLOWER_ROLE="follower"
 LEADER_ROLE="leader"
@@ -261,7 +289,7 @@ if [[ "$ENV" != "dev" ]]; then
     --machine-type="$MACHINE_TYPE_FOLLOWER" \
     --network-interface=network=projects/$VPC_HOST_PROJECT_ID/global/networks/$VPC_NETWORK,subnet=projects/$VPC_HOST_PROJECT_ID/regions/$REGION/subnetworks/$VPC_SUBNET,stack-type=IPV4_ONLY,no-address \
     --metadata-from-file=startup-script="$PATH_TO_STARTUP_SCRIPT" \
-    --metadata=google-logging-enabled=true,role=$FOLLOWER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$FOLLOWER_JVM_MEM,image=$FOLLOWER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,block-project-ssh-keys=TRUE \
+    --metadata=google-logging-enabled=true,role=$FOLLOWER_ROLE,env=$ENV,label=$LABEL,jvm_mem=$FOLLOWER_JVM_MEM,filtercache_maxram=$FOLLOWER_FILTERCACHE_MAXRAM,qrcache_maxram=$FOLLOWER_QRCACHE_MAXRAM,doccache_maxram=$FOLLOWER_DOCCACHE_MAXRAM,persegcache_maxram=$FOLLOWER_PERSEGCACHE_MAXRAM,image=$FOLLOWER_IMAGE,image_project=$IMAGE_PROJECT,image_repo=$IMAGE_REPO,zone=$ZONE,block-project-ssh-keys=TRUE \
     --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --service-account="$SERVICE_ACCOUNT" \
