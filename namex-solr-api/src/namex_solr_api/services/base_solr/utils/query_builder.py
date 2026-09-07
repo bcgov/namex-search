@@ -13,6 +13,7 @@ SYNONYM_SKIP_WORDS = frozenset({
 })
 _RAW_SYNONYM_TOKEN = re.compile(r"^[a-z0-9]+(?:'[a-z0-9]+)?$")
 RAW_SYNONYM_MEMBER_OR_CAP = 80
+_SYNONYM_LEMMA_MIN = 4
 
 
 def leftover_raw_synonym_tokens(
@@ -361,10 +362,10 @@ class QueryBuilder:
         query = query_term.lower()
         stem = query_stem.lower()
         key = key_term.lower()
-        if query == key or stem == key:
+        if key in (query, stem):
             return True
         return bool(
-            len(stem) >= 4
+            len(stem) >= _SYNONYM_LEMMA_MIN
             and query.startswith(key)
             and key.startswith(stem)
         )

@@ -29,36 +29,26 @@ def format_full_query_boost(info: dict) -> str:
     return f"({clause}^{boost})"
 
 
-def _apply_full_query_boosts(query_clause: str, boosts: list) -> str:
-    for info in boosts:
-        query_clause += f" OR {format_full_query_boost(info)}"
-    return query_clause
-
-
 def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
     """Return the list of possible conflicts from Solr that match the query."""
     # initialize payload with base doc query (init query / filter)
     stemmed_terms = analyze_stemmed_agro_tokens(solr, params.query.get("value", ""))
-    query_kwargs = {
-        "query": params.query,
-        "fields": params.query_fields,
-        "boost_fields": params.query_boost_fields,
-        "fuzzy_fields": params.query_fuzzy_fields,
-        "synonym_fields": params.query_synonym_fields,
-        "is_child_search": is_name_search,
-        "clause_bridge": "AND" if is_strict else "OR",
-        "stemmed_terms": stemmed_terms,
-    }
     initial_queries = solr.query_builder.build_base_query(
-        **query_kwargs,
+        query=params.query,
+        fields=params.query_fields,
+        boost_fields=params.query_boost_fields,
+        fuzzy_fields=params.query_fuzzy_fields,
+        synonym_fields=params.query_synonym_fields,
+        is_child_search=is_name_search,
+        clause_bridge="AND" if is_strict else "OR",
+        stemmed_terms=stemmed_terms,
         synonym_as_raw=True,
         expand_leftover_raw_synonyms=bool(
             getattr(params, "expand_leftover_raw_synonyms", False)
         ),
     )
-    initial_queries["query"] = _apply_full_query_boosts(
-        initial_queries["query"], params.full_query_boosts
-    )
+    for info in params.full_query_boosts:
+        initial_queries["query"] += f" OR {format_full_query_boost(info)}"
 
     highlight_query = None
     if params.highlighted_fields:

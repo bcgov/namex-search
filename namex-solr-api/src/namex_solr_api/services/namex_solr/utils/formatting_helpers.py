@@ -204,6 +204,23 @@ def candidate_letter_tokens(name: str) -> set[str]:
     return {token.upper() for token in re.findall(r"[A-Za-z]+", name or "")}
 
 
+def _append_unique(rewritten: list[str], seen: set[str], token: str) -> None:
+    if token not in seen:
+        rewritten.append(token)
+        seen.add(token)
+
+
+def _glued_run_at(terms: list[str], index: int) -> tuple[str | None, int]:
+    if not (len(terms[index]) == 1 and terms[index].isalpha()):
+        return None, 1
+    end = index + 1
+    while end < len(terms) and len(terms[end]) == 1 and terms[end].isalpha():
+        end += 1
+    if end - index >= 2:  # noqa: PLR2004
+        return "".join(terms[index:end]).upper(), end - index
+    return None, 1
+
+
 def apply_initials_group_exact_highlights(
     exact_highlights: list[str],
     query_terms: list[str],
@@ -229,23 +246,14 @@ def apply_initials_group_exact_highlights(
     seen: set[str] = set()
     i = 0
     while i < len(terms):
-        if len(terms[i]) == 1 and terms[i].isalpha():
-            j = i + 1
-            while j < len(terms) and len(terms[j]) == 1 and terms[j].isalpha():
-                j += 1
-            if j - i >= 2:  # noqa: PLR2004
-                glued = "".join(terms[i:j]).upper()
-                if glued in successful:
-                    if glued not in seen:
-                        rewritten.append(glued)
-                        seen.add(glued)
-                    i = j
-                    continue
+        glued, width = _glued_run_at(terms, i)
+        if glued and glued in successful:
+            _append_unique(rewritten, seen, glued)
+            i += width
+            continue
         upper = terms[i].upper()
-        if upper in exact_set and upper not in seen:
-            if not (upper in suppress and len(upper) == 1):
-                rewritten.append(upper)
-                seen.add(upper)
+        if upper in exact_set and upper not in seen and not (upper in suppress and len(upper) == 1):
+            _append_unique(rewritten, seen, upper)
         i += 1
 
     for token in exact_highlights:

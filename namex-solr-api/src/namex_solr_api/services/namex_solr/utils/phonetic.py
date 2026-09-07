@@ -1,32 +1,46 @@
+_VOWELS = ['A', 'E', 'I', 'O', 'U', 'Y']
+_NON_LEADING_VOWEL_FOLDS = {
+    'EY': 'A',
+    'EI': 'A',
+    'EA': 'A',
+    'AY': 'A',
+    'AI': 'A',
+    'Y': 'I',
+    'UE': 'U',
+}
+_CONSONANTS = ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'X', 'W', 'V', 'Z']
+_CONSONANT_FOLDS = (
+    ('CHR', 'KR'),
+    ('GG', 'G'),
+    ('C', 'K'),
+    ('CR', 'KR'),
+    ('CL', 'KL'),
+    ('PH', 'F'),
+    ('GH', 'G'),
+    ('GN', 'N'),
+    ('KN', 'N'),
+    ('PN', 'N'),
+    ('PS', 'S'),
+    ('WR', 'R'),
+    ('RH', 'R'),
+    ('WH', 'W'),
+)
+
+
 def first_vowels(word, leading_vowel=False):
-    vowels = ['A', 'E', 'I', 'O', 'U', 'Y']
     value = ''
     first_vowel_found = False
     for letter in word:
-        if letter not in vowels and first_vowel_found:
+        if letter not in _VOWELS and first_vowel_found:
             break
-        if letter in vowels:
+        if letter in _VOWELS:
             value += letter
             first_vowel_found = True
 
     if not leading_vowel:
-        if value == 'EY':
-            value = 'A'
-        if value == 'EI':
-            value = 'A'
-        if value == 'EA':
-            value = 'A'
-        if value == 'AY':
-            value = 'A'
-        if value == 'AI':
-            value = 'A'
-        if value == 'Y':
-            value = 'I'
-        if value == 'UE':
-            value = 'U'
-    else:
-        if value == 'OY':
-            value = 'OI'
+        value = _NON_LEADING_VOWEL_FOLDS.get(value, value)
+    elif value == 'OY':
+        value = 'OI'
 
     if 'AA' in value:
         value = value.replace('AA', 'A')
@@ -35,65 +49,24 @@ def first_vowels(word, leading_vowel=False):
 
 
 def first_consonants(word):
-    consonants = ['B', 'C', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'X', 'W', 'V', 'Z']
     value = ''
     first_consonant_found = False
     for letter in word:
-        if letter not in consonants and first_consonant_found:
+        if letter not in _CONSONANTS and first_consonant_found:
             break
-        if letter in consonants:
+        if letter in _CONSONANTS:
             value += letter
             first_consonant_found = True
 
-    if 'CHR' in value:
-        value = value.replace('CHR', 'KR')
-
-    if 'GG' in value:
-        value = value.replace('GG', 'G')
-
-    if 'C' in value:
-        value = value.replace('C', 'K')
-
-    if 'CR' in value:
-        value = value.replace('CR', 'KR')
-
-    if 'CL' in value:
-        value = value.replace('CL', 'KL')
-
-    if 'PH' in value:
-        value = value.replace('PH', 'F')
-
-    if 'GH' in value:
-        value = value.replace('GH', 'G')
-
-    if 'GN' in value:
-        value = value.replace('GN', 'N')
-
-    if 'KN' in value:
-        value = value.replace('KN', 'N')
-
-    if 'PN' in value:
-        value = value.replace('PN', 'N')
-
-    if 'PS' in value:
-        value = value.replace('PS', 'S')
-
-    if 'WR' in value:
-        value = value.replace('WR', 'R')
-
-    if 'RH' in value:
-        value = value.replace('RH', 'R')
-
-    if 'WH' in value:
-        value = value.replace('WH', 'W')
+    for old, new in _CONSONANT_FOLDS:
+        if old in value:
+            value = value.replace(old, new)
 
     return value
 
 
 def has_leading_vowel(word):
-    if word[0] in ['A', 'E', 'I', 'O', 'U', 'Y']:
-        return True
-    return False
+    return word[0] in _VOWELS
 
 
 def replace_special_leading_sounds(word):

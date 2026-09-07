@@ -21,6 +21,8 @@ _COVER_FUZZY = "fuzzy"
 _COVER_STRONG = frozenset({_COVER_EXACT, _COVER_STEM})
 _MIN_STEM = 4
 _MIN_DISTINCTIVE = 4
+_RANK_PREFIX_LEN = 3
+_MIN_INITIALS_RUN = 2
 _LONG_PHONETIC = 6
 _STEM_SUFFIXES = (
     "ational",
@@ -131,10 +133,7 @@ def _fuzzy_cover(query: str, name_tokens: list[str]) -> bool:
     if allowed is None:
         return False
     query_lower = query.lower()
-    for name_token in name_tokens:
-        if _edit_distance(query_lower, name_token.lower()) <= allowed:
-            return True
-    return False
+    return any(_edit_distance(query_lower, name_token.lower()) <= allowed for name_token in name_tokens)
 
 
 def _initials_run_covered(letters: list[str], name_tokens: list[str]) -> bool:
@@ -191,28 +190,37 @@ def _stem_cover(query: str, name_tokens: list[str], query_stems: set[str] | None
 def _is_rank_slot(term: str) -> bool:
     if len(term) >= _MIN_DISTINCTIVE:
         return True
-    return len(term) == 3 and term.lower() not in SYNONYM_SKIP_WORDS
+    return len(term) == _RANK_PREFIX_LEN and term.lower() not in SYNONYM_SKIP_WORDS
+
+
+def _letter_run(terms: list[str], index: int) -> list[str] | None:
+    term = terms[index]
+    if not (len(term) == 1 and term.isalpha()):
+        return None
+    end = index + 1
+    while end < len(terms) and len(terms[end]) == 1 and terms[end].isalpha():
+        end += 1
+    if end - index >= _MIN_INITIALS_RUN:
+        return terms[index:end]
+    return None
 
 
 def _query_has_distinctive(terms: list[str]) -> bool:
     index = 0
     while index < len(terms):
-        term = terms[index]
-        if len(term) == 1 and term.isalpha():
-            end = index + 1
-            while end < len(terms) and len(terms[end]) == 1 and terms[end].isalpha():
-                end += 1
-            if end - index >= 2:
-                return True
-            index = end
-            continue
-        if len(term) >= _MIN_DISTINCTIVE:
+        if run := _letter_run(terms, index):
             return True
-        index += 1
+        if len(terms[index]) >= _MIN_DISTINCTIVE:
+            return True
+        index += len(run) if run else 1
     return False
 
 
-def cover_query_token(
+def _sets_for_term(mapping: dict[str, set[str]], term: str) -> set[str]:
+    return mapping.get(term) or mapping.get(term.lower()) or set()
+
+
+def cover_query_token(  # noqa: PLR0913
     query_token: str,
     name_tokens: list[str],
     family: set[str] | None = None,
@@ -222,28 +230,47 @@ def cover_query_token(
 ) -> str | None:
     query = (query_token or "").strip()
     if not query:
-        return None
-    family = {token.lower() for token in (family or set())}
-    family_stems = {stem.lower() for stem in (family_stems or set())}
-    query_lower = query.lower()
-    sound_tokens = name_tokens if sound_tokens is None else sound_tokens
+        cover = None
+    else:
+        family = {token.lower() for token in (family or set())}
+        family_stems = {stem.lower() for stem in (family_stems or set())}
+        query_lower = query.lower()
+        sound_tokens = name_tokens if sound_tokens is None else sound_tokens
+        if any(name_token.lower() == query_lower for name_token in name_tokens):
+            cover = _COVER_EXACT
+        elif _stem_cover(query, name_tokens, query_stems):
+            cover = _COVER_STEM
+        elif family and keep_family_synonym_highlights(name_tokens, family, family_stems):
+            cover = _COVER_FAMILY
+        elif any(_real_phonetic_match(name_token, query) for name_token in sound_tokens):
+            cover = _COVER_PHONETIC
+        elif _fuzzy_cover(query, sound_tokens):
+            cover = _COVER_FUZZY
+        else:
+            cover = None
+    return cover
 
-    for name_token in name_tokens:
-        if name_token.lower() == query_lower:
-            return _COVER_EXACT
 
-    if _stem_cover(query, name_tokens, query_stems):
-        return _COVER_STEM
-
-    if family and keep_family_synonym_highlights(name_tokens, family, family_stems):
-        return _COVER_FAMILY
-
-    for name_token in sound_tokens:
-        if _real_phonetic_match(name_token, query):
-            return _COVER_PHONETIC
-
-    if _fuzzy_cover(query, sound_tokens):
-        return _COVER_FUZZY
+def _cover_for_run(  # noqa: PLR0913
+    run: list[str],
+    name_tokens: list[str],
+    family_by_term: dict[str, set[str]],
+    family_stems_by_term: dict[str, set[str]],
+    query_stems_by_term: dict[str, set[str]],
+    sound_tokens: list[str],
+) -> str | None:
+    if _initials_run_covered(run, name_tokens):
+        return _COVER_EXACT
+    glued = "".join(run)
+    if len(run) >= _MIN_DISTINCTIVE and glued:
+        return cover_query_token(
+            glued,
+            name_tokens,
+            _sets_for_term(family_by_term, glued),
+            _sets_for_term(family_stems_by_term, glued),
+            _sets_for_term(query_stems_by_term, glued),
+            sound_tokens,
+        )
     return None
 
 
@@ -267,13 +294,7 @@ def _iter_query_covers(
     index = 0
     while index < len(terms):
         term = terms[index]
-        run = None
-        if len(term) == 1 and term.isalpha():
-            end = index + 1
-            while end < len(terms) and len(terms[end]) == 1 and terms[end].isalpha():
-                end += 1
-            if end - index >= 2:
-                run = terms[index:end]
+        run = _letter_run(terms, index)
         if run:
             is_distinctive = True
             counts_for_rank = True
@@ -288,29 +309,21 @@ def _iter_query_covers(
             else name_tokens
         )
         if run:
-            cover = None
-            if _initials_run_covered(run, name_tokens):
-                cover = _COVER_EXACT
-            else:
-                glued = "".join(run)
-                if len(run) >= 4 and glued:
-                    cover = cover_query_token(
-                        glued,
-                        name_tokens,
-                        family_by_term.get(glued) or family_by_term.get(glued.lower()) or set(),
-                        family_stems_by_term.get(glued)
-                        or family_stems_by_term.get(glued.lower())
-                        or set(),
-                        query_stems_by_term.get(glued) or query_stems_by_term.get(glued.lower()) or set(),
-                        sound_tokens,
-                    )
+            cover = _cover_for_run(
+                run,
+                name_tokens,
+                family_by_term,
+                family_stems_by_term,
+                query_stems_by_term,
+                sound_tokens,
+            )
         else:
             cover = cover_query_token(
                 term,
                 name_tokens,
-                family_by_term.get(term) or family_by_term.get(term.lower()) or set(),
-                family_stems_by_term.get(term) or family_stems_by_term.get(term.lower()) or set(),
-                query_stems_by_term.get(term) or query_stems_by_term.get(term.lower()) or set(),
+                _sets_for_term(family_by_term, term),
+                _sets_for_term(family_stems_by_term, term),
+                _sets_for_term(query_stems_by_term, term),
                 sound_tokens,
             )
         yield require_all, awaiting_distinctive, is_distinctive, counts_for_rank, cover
@@ -391,11 +404,8 @@ def classify_conflict_bucket(
         if cover == _COVER_PHONETIC and (require_all or (awaiting_distinctive and is_distinctive)):
             saw_phonetic = True
 
-        if require_all:
-            if cover is None:
-                return BUCKET_DROP
-        elif awaiting_distinctive:
-            if is_distinctive:
-                if cover is None:
-                    return BUCKET_DROP
+        if require_all and cover is None:
+            return BUCKET_DROP
+        if awaiting_distinctive and is_distinctive and cover is None:
+            return BUCKET_DROP
     return BUCKET_PHONETIC if saw_phonetic else BUCKET_SYNONYM
