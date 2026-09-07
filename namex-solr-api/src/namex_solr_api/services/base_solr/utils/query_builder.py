@@ -125,22 +125,44 @@ class QueryBuilder:
         filter_q += ")"
         return filter_q
     
-    def build_term_clause(
+    @staticmethod
+    def _term_score_suffix(
+        term: str,
+        constant_score_terms: frozenset[str],
+        boost: int | None = None,
+    ) -> str:
+        """Return a Solr score suffix.
+
+        Outer-wildcard tokens use ^= so repeated occurrences do not add BM25
+        term frequency. Other terms keep the existing ^boost / unboosted form.
+        """
+        if term in constant_score_terms:
+            return f"^={boost if boost is not None else 1}"
+        if boost is not None:
+            return f"^{boost}"
+        return ""
+
+    def build_term_clause(  # noqa: PLR0913
         self,
         term: str,
         fields: dict[BaseEnum, str],
         boost_fields: dict[BaseEnum, int],
         fuzzy_fields: dict[BaseEnum, dict[str, int]],
-        is_child_search: bool
+        is_child_search: bool,
+        constant_score_terms: frozenset[str] | None = None,
     ) -> str:
         """Return the base term clause."""
+        constant_score_terms = constant_score_terms or frozenset()
         term_clause = ""
         for field, level in fields.items():
             field_clause = self.create_clause(field.value, term, level == "child", is_child_search)
             pre_boost_clause = field_clause
             # add boost
-            if field in boost_fields:
-                field_clause += f"^{boost_fields[field]}"
+            field_clause += self._term_score_suffix(
+                term,
+                constant_score_terms,
+                boost_fields.get(field),
+            )
 
             term_clause = self.join_clause(term_clause, field_clause, "OR")
             # add fuzzy matching
@@ -148,7 +170,9 @@ class QueryBuilder:
                                           fuzzy_fields[field]["short"],
                                           fuzzy_fields[field]["long"])):
                 # add another with fuzzy (this one will give a lower score on a hit if the original has a boost)
-                term_clause = self.join_clause(term_clause, f"{pre_boost_clause}{fuzzy_str}", "OR")
+                fuzzy_clause = f"{pre_boost_clause}{fuzzy_str}"
+                fuzzy_clause += self._term_score_suffix(term, constant_score_terms)
+                term_clause = self.join_clause(term_clause, fuzzy_clause, "OR")
         return term_clause
 
     def build_term_synonym_clauses(  # noqa: PLR0913
@@ -163,6 +187,7 @@ class QueryBuilder:
         stemmed_terms: list[str] | None = None,
         synonym_as_raw: bool = False,
         expand_leftover_raw_synonyms: bool = False,
+        constant_score_terms: frozenset[str] | None = None,
     ):
         """Return the term clause with the added synonym clauses."""
         term = terms[term_index]
@@ -207,8 +232,11 @@ class QueryBuilder:
                 )
 
             if synonym_clause:
-                if field in boost_fields:
-                    synonym_clause += f"^{boost_fields[field]}"
+                synonym_clause += self._term_score_suffix(
+                    term,
+                    constant_score_terms or frozenset(),
+                    boost_fields.get(field),
+                )
                 term_clause = self.join_clause(term_clause, f"({synonym_clause})", "OR")
 
         return term_clause
@@ -223,7 +251,8 @@ class QueryBuilder:
                          clause_bridge="AND",
                          stemmed_terms: list[str] | None = None,
                          synonym_as_raw: bool = False,
-                         expand_leftover_raw_synonyms: bool = False) -> dict[str, list[str]]:
+                         expand_leftover_raw_synonyms: bool = False,
+                         constant_score_terms: frozenset[str] | None = None) -> dict[str, list[str]]:
         """Return a solr query with filters for each subsequent term."""
         terms = query["value"].split()
         if not stemmed_terms or len(stemmed_terms) != len(terms):
@@ -235,12 +264,15 @@ class QueryBuilder:
         # This loop adds clauses for the all the given fields for each term
         for term_index, term in enumerate(terms):
             # Get the base clause, which references the fields, fuzzy fields and adds the boost clause for ordering
-            term_clause = self.build_term_clause(term, fields, boost_fields, fuzzy_fields, is_child_search)
+            term_clause = self.build_term_clause(
+                term, fields, boost_fields, fuzzy_fields, is_child_search, constant_score_terms
+            )
 
             # Add the synonym field clauses
             term_clause = self.build_term_synonym_clauses(
                 term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search,
                 boost_fields, stemmed_terms, synonym_as_raw, expand_leftover_raw_synonyms,
+                constant_score_terms,
             )
 
             # Join the term clause to the full query

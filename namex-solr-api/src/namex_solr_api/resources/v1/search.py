@@ -21,10 +21,12 @@ from namex_solr_api.services.namex_solr.utils import (
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
     keep_family_synonym_highlights,
+    mark_wildcard_constant_score_boosts,
     merge_reserved_coverage,
     namex_search,
     normalize_conflict_initials,
     normalize_nr_num,
+    outer_wildcard_constant_score_terms,
     parse_conflict_wildcard,
     prep_query_str_namex,
     rank_conflict_docs,
@@ -140,6 +142,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             0,
             int(current_app.config["SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS"]),
         )
+        constant_score_terms = outer_wildcard_constant_score_terms(wildcard, query["value"])
 
         params = QueryParams(
             query=query,
@@ -172,12 +175,16 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
-            full_query_boosts=apply_conflict_wildcard_boosts(
-                solr.get_name_search_full_query_boost(value),
-                wildcard.leading,
+            full_query_boosts=mark_wildcard_constant_score_boosts(
+                apply_conflict_wildcard_boosts(
+                    solr.get_name_search_full_query_boost(value),
+                    wildcard.leading,
+                ),
+                constant_score_terms,
             ),
             # TODO: add this as LD flag ? names ticket: #32885
-            exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
+            exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"],
+            constant_score_terms=constant_score_terms,
         )
 
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)

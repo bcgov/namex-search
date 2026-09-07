@@ -16,17 +16,18 @@ def format_full_query_boost(info: dict) -> str:
     (AND of field:token), or value with an optional fuzzy width.
     """
     boost = info["boost"]
+    score_op = "^=" if info.get("constant_score") else "^"
     if term_clauses := info.get("term_clauses"):
         inner = " AND ".join(term_clauses)
-        return f"(({inner})^{boost})"
+        return f"(({inner}){score_op}{boost})"
     field = info["field"].value
     if values := info.get("values"):
         inner = " AND ".join(f"{field}:{token}" for token in values)
-        return f"(({inner})^{boost})"
+        return f"(({inner}){score_op}{boost})"
     clause = f'{field}:"{info["value"]}"'
     if fuzzy := info.get("fuzzy"):
         clause += f"~{fuzzy}"
-    return f"({clause}^{boost})"
+    return f"({clause}{score_op}{boost})"
 
 
 def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
@@ -46,6 +47,7 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_
         expand_leftover_raw_synonyms=bool(
             getattr(params, "expand_leftover_raw_synonyms", False)
         ),
+        constant_score_terms=frozenset(params.constant_score_terms or []),
     )
     for info in params.full_query_boosts:
         initial_queries["query"] += f" OR {format_full_query_boost(info)}"

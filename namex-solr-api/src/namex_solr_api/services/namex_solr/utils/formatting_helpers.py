@@ -433,6 +433,46 @@ def apply_conflict_wildcard_boosts(boosts: list[dict], leading: bool) -> list[di
     return [item for item in boosts if item.get("field") != NameField.NAME_Q_EXACT]
 
 
+def outer_wildcard_constant_score_terms(
+    wildcard: ConflictWildcard, prepped_value: str
+) -> list[str]:
+    """Return outer-wildcard tokens that must score as presence, not term frequency.
+
+    Only leading/trailing * on the whole query qualifies. Tokens that still
+    contain * (S* contracting) stay regular Solr wildcard clauses.
+    """
+    if not wildcard.leading and not wildcard.trailing:
+        return []
+    return [term for term in (prepped_value or "").split() if term and "*" not in term]
+
+
+def mark_wildcard_constant_score_boosts(
+    boosts: list[dict], terms: list[str]
+) -> list[dict]:
+    """Mark single-token phrase boosts for the wildcarded term as constant-score.
+
+    name_q_exact stays a normal boost so trailing * still prefers starts-with.
+    Multi-token phrase / initials / coverage boosts are left unchanged.
+    """
+    if not terms:
+        return list(boosts)
+
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    term_set = set(terms)
+    marked = []
+    for item in boosts:
+        new_item = dict(item)
+        if new_item.get("field") == NameField.NAME_Q_EXACT:
+            marked.append(new_item)
+            continue
+        tokens = str(new_item.get("value") or "").split()
+        if len(tokens) == 1 and tokens[0] in term_set:
+            new_item["constant_score"] = True
+        marked.append(new_item)
+    return marked
+
+
 def leading_wildcard_sort_key(name: str, query: str) -> int:
     """0 = query term is preceded by other words/characters; 1 = starts with term."""
     tokens = _NAME_TOKEN.findall((name or "").lower())
