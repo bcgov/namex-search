@@ -1,5 +1,5 @@
 """Solr query params."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from namex_solr_api.common.base_enum import BaseEnum
 
@@ -23,3 +23,6 @@ class QueryParams:  # pylint: disable=too-few-public-methods
     full_query_boosts: list[dict[str, BaseEnum | str]]
     exclude_sub_types: list[str]
     expand_leftover_raw_synonyms: bool = False
+    # Outer-wildcard tokens scored as presence (Solr ^=). Empty for /nrs
+    # and normal conflict search so BM25 defaults stay unchanged.
+    constant_score_terms: list[str] = field(default_factory=list)
