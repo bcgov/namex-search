@@ -1,36 +1,3 @@
-# Copyright © 2025 Province of British Columbia
-#
-# Licensed under the BSD 3 Clause License, (the "License");
-# you may not use this file except in compliance with the License.
-# The template for the license can be found here
-#    https://opensource.org/license/bsd-3-clause/
-#
-# Redistribution and use in source and binary forms,
-# with or without modification, are permitted provided that the
-# following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its contributors
-#    may be used to endorse or promote products derived from this software
-#    without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
 """Manages common solr query building methods."""
 import re
 
@@ -45,6 +12,33 @@ SYNONYM_SKIP_WORDS = frozenset({
     "their", "then", "there", "these", "they", "this", "to", "of",
 })
 _RAW_SYNONYM_TOKEN = re.compile(r"^[a-z0-9]+(?:'[a-z0-9]+)?$")
+RAW_SYNONYM_MEMBER_OR_CAP = 80
+
+
+def leftover_raw_synonym_tokens(
+    key_terms: list[str],
+    members: list[str] | None,
+    cap: int = RAW_SYNONYM_MEMBER_OR_CAP,
+) -> list[str]:
+    extras: list[str] = []
+    seen = {token.lower() for token in key_terms if token}
+    budget = max(0, cap - len(seen))
+    if budget == 0:
+        return extras
+    for member in members or []:
+        for part in (member or "").lower().replace("-", " ").split():
+            if (
+                not part
+                or part in seen
+                or part in SYNONYM_SKIP_WORDS
+                or not _RAW_SYNONYM_TOKEN.match(part)
+            ):
+                continue
+            extras.append(part)
+            seen.add(part)
+            if len(extras) >= budget:
+                return extras
+    return extras
 
 
 class QueryBuilder:
@@ -167,6 +161,7 @@ class QueryBuilder:
         boost_fields: dict[BaseEnum, int],
         stemmed_terms: list[str] | None = None,
         synonym_as_raw: bool = False,
+        expand_leftover_raw_synonyms: bool = False,
     ):
         """Return the term clause with the added synonym clauses."""
         term = terms[term_index]
@@ -183,18 +178,31 @@ class QueryBuilder:
                 field_value = self.pre_parent_filter_clause + field.value
 
             synonym_clause = ""
+            active_key: list[str] = []
             if synonym_terms and term_index < synonym_start_index + len(synonym_terms):
                 # a synonym matched on a previous term and includes the current term (multi word synonym)
-                synonym_clause = self._synonym_field_clause(
-                    field.value, field_value, synonym_terms, synonym_as_raw
-                )
+                active_key = synonym_terms
             elif new_synonym_terms := self.find_synonym_terms(
                 term, term_index, terms, field, stemmed_terms
             ):
                 synonym_info[field]["synonym_terms"] = new_synonym_terms
                 synonym_info[field]["synonym_start_index"] = term_index
+                active_key = new_synonym_terms
+            if active_key:
+                extra_or_tokens = (
+                    leftover_raw_synonym_tokens(
+                        active_key,
+                        self._synonym_member_list(field, active_key),
+                    )
+                    if synonym_as_raw and expand_leftover_raw_synonyms and term_index > 0
+                    else []
+                )
                 synonym_clause = self._synonym_field_clause(
-                    field.value, field_value, new_synonym_terms, synonym_as_raw
+                    field.value,
+                    field_value,
+                    active_key,
+                    synonym_as_raw,
+                    extra_or_tokens,
                 )
 
             if synonym_clause:
@@ -213,12 +221,9 @@ class QueryBuilder:
                          is_child_search: bool,
                          clause_bridge="AND",
                          stemmed_terms: list[str] | None = None,
-                         synonym_as_raw: bool = False) -> dict[str, list[str]]:
-        """Return a solr query with filters for each subsequent term.
-
-        synonym_as_raw=True uses {!raw} so the query-time ALL graph does not
-        expand into scoring. Use False for hl.q so family words still gold.
-        """
+                         synonym_as_raw: bool = False,
+                         expand_leftover_raw_synonyms: bool = False) -> dict[str, list[str]]:
+        """Return a solr query with filters for each subsequent term."""
         terms = query["value"].split()
         if not stemmed_terms or len(stemmed_terms) != len(terms):
             stemmed_terms = terms
@@ -234,7 +239,7 @@ class QueryBuilder:
             # Add the synonym field clauses
             term_clause = self.build_term_synonym_clauses(
                 term_clause, terms, term_index, synonym_info, synonym_fields, is_child_search,
-                boost_fields, stemmed_terms, synonym_as_raw,
+                boost_fields, stemmed_terms, synonym_as_raw, expand_leftover_raw_synonyms,
             )
 
             # Join the term clause to the full query
@@ -282,18 +287,28 @@ class QueryBuilder:
                 candidates.append(row)
 
         best_synonym_match_terms: list[str] = []
+        best_rank: tuple[int, int, int] | None = None
         for row in candidates:
             synonym_terms = row.synonym.split()
             if not synonym_terms or len(synonym_terms) > len(terms[start_term_index:]):
                 continue
             if any(self._is_synonym_skip_token(token) for token in synonym_terms):
                 continue
-            if best_synonym_match_terms and len(synonym_terms) < len(best_synonym_match_terms):
-                continue
-            if self._query_covers_synonym_key(
+            if not self._query_covers_synonym_key(
                 synonym_terms, start_term_index, terms, stemmed_terms
             ):
+                continue
+            rank = (
+                len(synonym_terms),
+                *self._synonym_key_rank(
+                    synonym_terms,
+                    terms[start_term_index],
+                    start_stem,
+                ),
+            )
+            if best_rank is None or rank > best_rank:
                 best_synonym_match_terms = synonym_terms
+                best_rank = rank
 
         return best_synonym_match_terms
 
@@ -301,18 +316,24 @@ class QueryBuilder:
     def _is_synonym_skip_token(token: str) -> bool:
         return bool(token) and token.lower() in SYNONYM_SKIP_WORDS
 
+    def _synonym_member_list(self, field: BaseEnum, synonym_terms: list[str]) -> list[str]:
+        from namex_solr_api.models import SolrSynonymList
+
+        key = " ".join(synonym_terms).strip()
+        if not key:
+            return []
+        row = SolrSynonymList.find_by_synonym(key, self.synonym_field_map[field])
+        return list(row.synonym_list or []) if row else []
+
     @staticmethod
     def _synonym_field_clause(
         leaf_field: str,
         field_value: str,
         synonym_terms: list[str],
         synonym_as_raw: bool,
+        extra_or_tokens: list[str] | None = None,
     ) -> str:
-        """Build a synonym field clause.
-
-        Analyzed form (highlight): name_q_synonym:carrier — query-time ALL expands.
-        Raw form (retrieval): {!raw f=name_q_synonym}carrier — one indexed term.
-        """
+        """Build a synonym field clause."""
         if not synonym_as_raw:
             return f"{field_value}:{' '.join(synonym_terms)}"
         raw_parts = []
@@ -321,11 +342,49 @@ class QueryBuilder:
             if not _RAW_SYNONYM_TOKEN.match(safe):
                 return f"{field_value}:{' '.join(synonym_terms)}"
             raw_parts.append(f'_query_:"{{!raw f={leaf_field}}}{safe}"')
+        extra_parts = []
+        for token in extra_or_tokens or []:
+            safe = token.lower()
+            if not _RAW_SYNONYM_TOKEN.match(safe):
+                continue
+            extra_parts.append(f'_query_:"{{!raw f={leaf_field}}}{safe}"')
         raw_clause = " AND ".join(raw_parts)
+        if extra_parts:
+            raw_clause = f"({raw_clause} OR {' OR '.join(extra_parts)})"
         prefix = field_value[: -len(leaf_field)] if field_value.endswith(leaf_field) else ""
         if prefix:
             return f"{prefix}({raw_clause})"
         return raw_clause
+
+    @staticmethod
+    def _token_covers_synonym_key(query_term: str, query_stem: str, key_term: str) -> bool:
+        query = query_term.lower()
+        stem = query_stem.lower()
+        key = key_term.lower()
+        if query == key or stem == key:
+            return True
+        return bool(
+            len(stem) >= 4
+            and query.startswith(key)
+            and key.startswith(stem)
+        )
+
+    @staticmethod
+    def _synonym_key_rank(
+        key_terms: list[str],
+        query_term: str,
+        query_stem: str,
+    ) -> tuple[int, int]:
+        key = " ".join(key_terms).lower()
+        query = query_term.lower()
+        stem = query_stem.lower()
+        if key == stem:
+            return (3, len(key))
+        if query.startswith(key) and key != query:
+            return (2, len(key))
+        if key == query:
+            return (1, len(key))
+        return (0, 0)
 
     @staticmethod
     def _query_covers_synonym_key(
@@ -334,7 +393,7 @@ class QueryBuilder:
         terms: list[str],
         stemmed_terms: list[str],
     ) -> bool:
-        """True if each key token equals the query token or its agro stem."""
+        """True if each key token equals the query token, its agro stem, or its lemma."""
         for i, key_term in enumerate(key_terms):
             query_term = terms[start_index + i]
             query_stem = (
@@ -342,7 +401,7 @@ class QueryBuilder:
                 if start_index + i < len(stemmed_terms)
                 else query_term
             )
-            if query_term.lower() != key_term.lower() and query_stem.lower() != key_term.lower():
+            if not QueryBuilder._token_covers_synonym_key(query_term, query_stem, key_term):
                 return False
         return True
 
