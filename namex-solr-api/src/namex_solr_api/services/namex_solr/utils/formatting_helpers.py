@@ -1,36 +1,3 @@
-# Copyright © 2025 Province of British Columbia
-#
-# Licensed under the BSD 3 Clause License, (the "License");
-# you may not use this file except in compliance with the License.
-# The template for the license can be found here
-#    https://opensource.org/license/bsd-3-clause/
-#
-# Redistribution and use in source and binary forms,
-# with or without modification, are permitted provided that the
-# following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its contributors
-#    may be used to endorse or promote products derived from this software
-#    without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
 """Solr formatting functions."""
 import re
 from dataclasses import dataclass
@@ -38,6 +5,7 @@ from dataclasses import dataclass
 from flask import current_app
 
 from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
+from namex_solr_api.services.base_solr.utils.query_builder import SYNONYM_SKIP_WORDS
 
 # Punct/space between two single letters (H&H, H.H., H. & H.). Does not insert "and".
 _INITIAL_PUNCT = re.compile(
@@ -56,6 +24,26 @@ _KEEP_TWO_LETTER = frozenset({
     "an", "as", "at", "be", "by", "if", "in", "is", "it", "no", "of", "on", "or", "to",
     "bc", "ca"
 })
+_DISTINCTIVE_LETTER_RUN = 4
+
+
+def _glue_distinctive_letter_runs(text: str) -> str:
+    tokens = text.split()
+    glued: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if len(token) == 1 and token.isalpha():
+            end = index + 1
+            while end < len(tokens) and len(tokens[end]) == 1 and tokens[end].isalpha():
+                end += 1
+            if end - index >= _DISTINCTIVE_LETTER_RUN:
+                glued.append("".join(tokens[index:end]))
+                index = end
+                continue
+        glued.append(token)
+        index += 1
+    return " ".join(glued)
 
 
 def normalize_conflict_initials(query: str | None) -> str:
@@ -82,7 +70,8 @@ def normalize_conflict_initials(query: str | None) -> str:
         return f"{token[0]} {token[1]}"
 
     normalized = _TWO_LETTER.sub(split_glued_initials, normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return _glue_distinctive_letter_runs(normalized)
 
 
 def remove_designation_tokens(query: str, designations: list[str] | None = None) -> str:
@@ -162,6 +151,18 @@ INITIALS_GROUP_BOOST_WEIGHT = "80"
 DISTINCTIVE_COVERAGE_BOOST_WEIGHT = "80"
 # Matches QueryBuilder's fuzzy floor; excludes initials and stop-like tokens.
 _DISTINCTIVE_MIN_TERM_LEN = 4
+_COVERAGE_MIN_TERM_LEN = 3
+MIN_COVERAGE_TERMS = 2
+
+
+def is_coverage_prefix_term(token: str) -> bool:
+    if not token:
+        return False
+    if len(token) >= _DISTINCTIVE_MIN_TERM_LEN:
+        return True
+    if len(token) < _COVERAGE_MIN_TERM_LEN:
+        return False
+    return token.lower() not in SYNONYM_SKIP_WORDS
 
 
 def _designations_for_match_prep() -> list[str]:
@@ -183,15 +184,7 @@ def conflict_match_prep_terms(query_value: str, designations: list[str] | None =
     return remove_designation_tokens(prepared, designations).split()
 
 
-def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> list[dict]:
-    """All maximal 2+ single-letter runs AND all length>1 terms.
-
-    Additional full-query boost; appended beside existing phrase boosts.
-    """
-    if boost is None:
-        boost = INITIALS_GROUP_BOOST_WEIGHT
-    from namex_solr_api.services.namex_solr.doc_models import NameField
-
+def initials_group_runs(terms: list[str]) -> list[str]:
     runs: list[str] = []
     i = 0
     while i < len(terms):
@@ -204,6 +197,85 @@ def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> l
             i = j
         else:
             i += 1
+    return runs
+
+
+def candidate_letter_tokens(name: str) -> set[str]:
+    return {token.upper() for token in re.findall(r"[A-Za-z]+", name or "")}
+
+
+def _append_unique(rewritten: list[str], seen: set[str], token: str) -> None:
+    if token not in seen:
+        rewritten.append(token)
+        seen.add(token)
+
+
+def _glued_run_at(terms: list[str], index: int) -> tuple[str | None, int]:
+    if not (len(terms[index]) == 1 and terms[index].isalpha()):
+        return None, 1
+    end = index + 1
+    while end < len(terms) and len(terms[end]) == 1 and terms[end].isalpha():
+        end += 1
+    if end - index >= 2:  # noqa: PLR2004
+        return "".join(terms[index:end]).upper(), end - index
+    return None, 1
+
+
+def apply_initials_group_exact_highlights(
+    exact_highlights: list[str],
+    query_terms: list[str],
+    candidate_name: str,
+) -> list[str]:
+    if not exact_highlights:
+        return exact_highlights
+
+    terms = [term.lower() for term in query_terms if term]
+    runs = initials_group_runs(terms)
+    if not runs:
+        return exact_highlights
+
+    name_tokens = candidate_letter_tokens(candidate_name)
+    successful = {run.upper() for run in runs if run.upper() in name_tokens}
+    if not successful:
+        return exact_highlights
+
+    suppress = {letter for glued in successful for letter in glued if letter.isalpha()}
+    exact_set = {token.upper() for token in exact_highlights}
+
+    rewritten: list[str] = []
+    seen: set[str] = set()
+    i = 0
+    while i < len(terms):
+        glued, width = _glued_run_at(terms, i)
+        if glued and glued in successful:
+            _append_unique(rewritten, seen, glued)
+            i += width
+            continue
+        upper = terms[i].upper()
+        if upper in exact_set and upper not in seen and not (upper in suppress and len(upper) == 1):
+            _append_unique(rewritten, seen, upper)
+        i += 1
+
+    for token in exact_highlights:
+        upper = token.upper()
+        if upper in suppress and len(upper) == 1:
+            continue
+        if upper not in seen:
+            rewritten.append(upper)
+            seen.add(upper)
+    return rewritten
+
+
+def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> list[dict]:
+    """All maximal 2+ single-letter runs AND all length>1 terms.
+
+    Additional full-query boost; appended beside existing phrase boosts.
+    """
+    if boost is None:
+        boost = INITIALS_GROUP_BOOST_WEIGHT
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    runs = initials_group_runs(terms)
     rest = [token for token in terms if len(token) > 1]
     if not runs or not rest:
         return []
@@ -228,6 +300,62 @@ def _distinctive_term_clause(term: str) -> str:
     if fuzzy := QueryBuilder.get_fuzzy_str(term, 1, 2):
         parts.append(f"{NameField.NAME_Q.value}:{term}{fuzzy}")
     return f"({' OR '.join(parts)})"
+
+
+def distinctive_coverage_terms(query_value: str) -> list[str]:
+    return [token for token in (query_value or "").split() if is_coverage_prefix_term(token)]
+
+
+def should_run_reserved_coverage(strict: bool, start: int, query_value: str) -> bool:
+    return (
+        not strict
+        and start == 0
+        and len(distinctive_coverage_terms(query_value)) >= MIN_COVERAGE_TERMS
+    )
+
+
+def reserved_coverage_params(params):
+    from dataclasses import replace
+
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    terms = distinctive_coverage_terms(params.query.get("value", ""))
+    if len(terms) < MIN_COVERAGE_TERMS:
+        return None
+    query_fields = {
+        field: role
+        for field, role in (params.query_fields or {}).items()
+        if field != NameField.NAME_Q_PHON_EN
+    }
+    return replace(
+        params,
+        query={**params.query, "value": " ".join(terms)},
+        start=0,
+        full_query_boosts=[],
+        query_fields=query_fields,
+        expand_leftover_raw_synonyms=True,
+    )
+
+
+def merge_reserved_coverage(
+    coverage_docs: list[dict],
+    or_docs: list[dict],
+    rows: int,
+    id_field: str = "id",
+) -> list[dict]:
+    if rows <= 0:
+        return []
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for doc in list(coverage_docs or []) + list(or_docs or []):
+        key = doc.get(id_field)
+        if key is None or key in seen:
+            continue
+        seen.add(key)
+        merged.append(doc)
+        if len(merged) >= rows:
+            break
+    return merged
 
 
 def build_distinctive_coverage_boosts(

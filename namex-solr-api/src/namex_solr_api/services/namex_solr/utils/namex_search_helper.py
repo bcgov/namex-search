@@ -1,36 +1,3 @@
-# Copyright © 2025 Province of British Columbia
-#
-# Licensed under the BSD 3 Clause License, (the "License");
-# you may not use this file except in compliance with the License.
-# The template for the license can be found here
-#    https://opensource.org/license/bsd-3-clause/
-#
-# Redistribution and use in source and binary forms,
-# with or without modification, are permitted provided that the
-# following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its contributors
-#    may be used to endorse or promote products derived from this software
-#    without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
 """NameX solr search functions."""
 import re
 
@@ -62,41 +29,30 @@ def format_full_query_boost(info: dict) -> str:
     return f"({clause}^{boost})"
 
 
-def _apply_full_query_boosts(query_clause: str, boosts: list) -> str:
-    for info in boosts:
-        query_clause += f" OR {format_full_query_boost(info)}"
-    return query_clause
-
-
 def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
     """Return the list of possible conflicts from Solr that match the query."""
     # initialize payload with base doc query (init query / filter)
     stemmed_terms = analyze_stemmed_agro_tokens(solr, params.query.get("value", ""))
-    query_kwargs = {
-        "query": params.query,
-        "fields": params.query_fields,
-        "boost_fields": params.query_boost_fields,
-        "fuzzy_fields": params.query_fuzzy_fields,
-        "synonym_fields": params.query_synonym_fields,
-        "is_child_search": is_name_search,
-        "clause_bridge": "AND" if is_strict else "OR",
-        "stemmed_terms": stemmed_terms,
-    }
-    # Retrieval uses {!raw} so query-time ALL does not inflate scores.
-    initial_queries = solr.query_builder.build_base_query(**query_kwargs, synonym_as_raw=True)
-    initial_queries["query"] = _apply_full_query_boosts(
-        initial_queries["query"], params.full_query_boosts
+    initial_queries = solr.query_builder.build_base_query(
+        query=params.query,
+        fields=params.query_fields,
+        boost_fields=params.query_boost_fields,
+        fuzzy_fields=params.query_fuzzy_fields,
+        synonym_fields=params.query_synonym_fields,
+        is_child_search=is_name_search,
+        clause_bridge="AND" if is_strict else "OR",
+        stemmed_terms=stemmed_terms,
+        synonym_as_raw=True,
+        expand_leftover_raw_synonyms=bool(
+            getattr(params, "expand_leftover_raw_synonyms", False)
+        ),
     )
+    for info in params.full_query_boosts:
+        initial_queries["query"] += f" OR {format_full_query_boost(info)}"
 
     highlight_query = None
     if params.highlighted_fields:
-        # hl.q keeps the analyzed synonym clause so TRANSPORT still golds.
-        highlight_queries = solr.query_builder.build_base_query(
-            **query_kwargs, synonym_as_raw=False
-        )
-        highlight_query = _apply_full_query_boosts(
-            highlight_queries["query"], params.full_query_boosts
-        )
+        highlight_query = initial_queries["query"]
 
     # add defaults
     parent_field = NameField.PARENT_TYPE.value if is_name_search else PCField.TYPE.value

@@ -1,38 +1,13 @@
-# Copyright © 2025 Province of British Columbia
-#
-# Licensed under the BSD 3 Clause License, (the "License");
-# you may not use this file except in compliance with the License.
-# The template for the license can be found here
-#    https://opensource.org/license/bsd-3-clause/
-#
-# Redistribution and use in source and binary forms,
-# with or without modification, are permitted provided that the
-# following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its contributors
-#    may be used to endorse or promote products derived from this software
-#    without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
 """Manages common solr synonym payload build methods."""
+import re
+
 from namex_solr_api.models import SolrSynonymList
+from namex_solr_api.services.base_solr.utils.query_builder import SYNONYM_SKIP_WORDS
+
+from .analysis_helpers import analyze_stemmed_agro_tokens
+
+_NAME_SURFACE_TOKEN = re.compile(r"[A-Za-z0-9']+")
+_MIN_STEM_PREFIX = 4
 
 
 def _get_synonyms(synonym_type: SolrSynonymList.Type) -> dict[str, list[str]]:
@@ -45,3 +20,142 @@ def _get_synonyms(synonym_type: SolrSynonymList.Type) -> dict[str, list[str]]:
 def get_synonyms() -> dict[SolrSynonymList.Type, dict[str, list[str]]]:
     """Return all synonyms used for SOLR queries."""
     return {SolrSynonymList.Type.ALL: _get_synonyms(SolrSynonymList.Type.ALL)}
+
+
+def retrieve_synonym_families_by_term(
+    query_value: str,
+    query_builder,
+    synonym_field,
+    stemmed_terms: list[str] | None = None,
+) -> dict[str, set[str]]:
+    terms = (query_value or "").split()
+    if not terms:
+        return {}
+    stemmed_terms = stemmed_terms or terms
+    synonym_type = query_builder.synonym_field_map[synonym_field]
+    families: dict[str, set[str]] = {}
+    for index, term in enumerate(terms):
+        allowed: set[str] = set()
+        key_terms = query_builder.find_synonym_terms(
+            term, index, terms, synonym_field, stemmed_terms
+        )
+        if key_terms:
+            key = " ".join(key_terms)
+            _add_family_surfaces(allowed, key)
+            if row := SolrSynonymList.find_by_synonym(key, synonym_type):
+                for member in row.synonym_list or []:
+                    _add_family_surfaces(allowed, member)
+        families[term] = allowed
+    return families
+
+
+def retrieve_synonym_family_tokens(
+    query_value: str,
+    query_builder,
+    synonym_field,
+    stemmed_terms: list[str] | None = None,
+) -> set[str]:
+    allowed: set[str] = set()
+    for part in retrieve_synonym_families_by_term(
+        query_value, query_builder, synonym_field, stemmed_terms
+    ).values():
+        allowed.update(part)
+    return allowed
+
+
+def _add_family_surfaces(allowed: set[str], text: str) -> None:
+    if not text or not (lower := text.lower().strip()):
+        return
+    if lower not in SYNONYM_SKIP_WORDS:
+        allowed.add(lower)
+    allowed.update(
+        part for part in lower.split() if part and part not in SYNONYM_SKIP_WORDS
+    )
+
+
+def name_surface_tokens(name: str) -> list[str]:
+    return _NAME_SURFACE_TOKEN.findall(name or "")
+
+
+def candidate_synonym_highlight_tokens(solr_tokens: list[str], name: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for token in [*solr_tokens, *name_surface_tokens(name)]:
+        for part in re.sub(r"<[^>]+>", "", token).upper().split():
+            if part and part not in seen:
+                seen.add(part)
+                candidates.append(part)
+    return candidates
+
+
+def keep_family_synonym_highlights(
+    tokens: list[str],
+    family_tokens: set[str],
+    family_stems: set[str] | None = None,
+    token_stems: dict[str, list[str]] | None = None,
+) -> list[str]:
+    family = {token.lower() for token in family_tokens}
+    stems = {stem.lower() for stem in (family_stems or set())}
+    token_stems = token_stems or {}
+    kept: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        upper = token.upper()
+        if not upper or upper in seen:
+            continue
+        lower = token.lower()
+        if lower in SYNONYM_SKIP_WORDS:
+            continue
+        if lower in family:
+            seen.add(upper)
+            kept.append(upper)
+            continue
+        analyzed = [stem.lower() for stem in token_stems.get(lower, [])]
+        if any(stem in family or stem in stems for stem in analyzed):
+            seen.add(upper)
+            kept.append(upper)
+            continue
+        if _stem_prefix_in_family(lower, family, stems):
+            seen.add(upper)
+            kept.append(upper)
+    return kept
+
+
+def _stem_prefix_in_family(token: str, family: set[str], stems: set[str]) -> bool:
+    if len(token) < _MIN_STEM_PREFIX:
+        return False
+    for stem in family | stems:
+        if len(stem) < _MIN_STEM_PREFIX:
+            continue
+        if token.startswith(stem) or stem.startswith(token):
+            return True
+    return False
+
+
+def family_synonym_highlights(
+    query_value: str,
+    tokens: list[str],
+    solr,
+    synonym_field,
+    name: str = "",
+) -> list[str]:
+    candidates = candidate_synonym_highlight_tokens(tokens, name)
+    if not candidates:
+        return []
+    stemmed_terms = analyze_stemmed_agro_tokens(solr, query_value or "")
+    family = retrieve_synonym_family_tokens(
+        query_value, solr.query_builder, synonym_field, stemmed_terms
+    )
+    if not family:
+        return []
+    family_stems = {
+        stem.lower()
+        for stem in analyze_stemmed_agro_tokens(solr, " ".join(sorted(family)))
+    }
+    token_stems = {
+        token.lower(): [
+            stem.lower() for stem in analyze_stemmed_agro_tokens(solr, token.lower())
+        ]
+        for token in {item.lower() for item in candidates}
+    }
+    return keep_family_synonym_highlights(candidates, family, family_stems, token_stems)

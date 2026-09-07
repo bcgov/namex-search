@@ -1,39 +1,7 @@
-# Copyright © 2025 Province of British Columbia
-#
-# Licensed under the BSD 3 Clause License, (the "License");
-# you may not use this file except in compliance with the License.
-# The template for the license can be found here
-#    https://opensource.org/license/bsd-3-clause/
-#
-# Redistribution and use in source and binary forms,
-# with or without modification, are permitted provided that the
-# following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its contributors
-#    may be used to endorse or promote products derived from this software
-#    without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
 # TODO: add search endpoints replicating namex queries ? Maybe don't need this
 """Exposes all of the search endpoints in Flask-Blueprint style."""
 import re
+from dataclasses import replace
 from http import HTTPStatus
 
 from flask import Blueprint, current_app, jsonify, request
@@ -46,17 +14,46 @@ from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import (
+    analyze_stemmed_agro_tokens,
     apply_conflict_wildcard_boosts,
+    apply_initials_group_exact_highlights,
     apply_leading_wildcard_rank,
+    candidate_synonym_highlight_tokens,
+    classify_conflict_bucket,
+    keep_family_synonym_highlights,
+    merge_reserved_coverage,
     namex_search,
     normalize_conflict_initials,
     normalize_nr_num,
     parse_conflict_wildcard,
     prep_query_str_namex,
+    rank_conflict_docs,
     remove_designation_tokens,
+    reserved_coverage_params,
+    retrieve_synonym_families_by_term,
+    should_run_reserved_coverage,
 )
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
+
+
+def _conflict_solr_search(params: QueryParams, is_strict: bool, max_highlighted_docs: int):
+    if params.rows <= max_highlighted_docs:
+        results = namex_search(params, solr, True, is_strict)
+        return results, results.get("highlighting", {})
+
+    results = namex_search(replace(params, highlighted_fields=[]), solr, True, is_strict)
+    solr_highlighting: dict[str, dict[str, list[str]]] = {}
+    highlight_rows = min(params.rows, max_highlighted_docs)
+    if highlight_rows > 0:
+        highlight_results = namex_search(
+            replace(params, rows=highlight_rows),
+            solr,
+            True,
+            is_strict,
+        )
+        solr_highlighting = highlight_results.get("highlighting", {})
+    return results, solr_highlighting
 
 
 @bp.post("/possible-conflict-names")
@@ -183,50 +180,62 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"]
         )
 
-        results = None
-        solr_highlighting: dict[str, dict[str, list[str]]] = {}
-        if rows <= max_highlighted_docs:
-            results = namex_search(params, solr, True, strict)
-            solr_highlighting = results.get("highlighting", {})
-        else:
-            # Run the main search without highlighting, then a smaller highlighted pass.
-            results = namex_search(QueryParams(
-                query=params.query,
-                rows=params.rows,
-                start=params.start,
-                categories=params.categories,
-                child_query=params.child_query,
-                child_categories=params.child_categories,
-                fields=params.fields,
-                highlighted_fields=[],
-                query_fields=params.query_fields,
-                query_boost_fields=params.query_boost_fields,
-                query_fuzzy_fields=params.query_fuzzy_fields,
-                query_synonym_fields=params.query_synonym_fields,
-                full_query_boosts=params.full_query_boosts,
-                exclude_sub_types=params.exclude_sub_types,
-            ), solr, True, strict)
-
-            highlight_rows = min(rows, max_highlighted_docs)
-            if highlight_rows > 0:
-                highlight_results = namex_search(QueryParams(
-                    query=params.query,
-                    rows=highlight_rows,
-                    start=params.start,
-                    categories=params.categories,
-                    child_query=params.child_query,
-                    child_categories=params.child_categories,
-                    fields=params.fields,
-                    highlighted_fields=highlighted_fields,
-                    query_fields=params.query_fields,
-                    query_boost_fields=params.query_boost_fields,
-                    query_fuzzy_fields=params.query_fuzzy_fields,
-                    query_synonym_fields=params.query_synonym_fields,
-                    full_query_boosts=params.full_query_boosts,
-                    exclude_sub_types=params.exclude_sub_types,
-                ), solr, True, strict)
-                solr_highlighting = highlight_results.get("highlighting", {})
+        results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
+        or_docs = results.get("response", {}).get("docs") or []
+        coverage_params = (
+            reserved_coverage_params(params)
+            if should_run_reserved_coverage(strict, start, params.query.get("value", ""))
+            else None
+        )
+        if coverage_params:
+            coverage_results, coverage_highlighting = _conflict_solr_search(
+                coverage_params,
+                True,
+                max_highlighted_docs,
+            )
+            or_docs = merge_reserved_coverage(
+                coverage_results.get("response", {}).get("docs") or [],
+                or_docs,
+                rows,
+            )
+            solr_highlighting = {**solr_highlighting, **coverage_highlighting}
+            results = {
+                **results,
+                "response": {
+                    **results.get("response", {}),
+                    "docs": or_docs,
+                },
+            }
         docs = []
+        query_value = params.query.get("value", "")
+        query_stems = analyze_stemmed_agro_tokens(solr, query_value)
+        families_by_term = retrieve_synonym_families_by_term(
+            query_value,
+            solr.query_builder,
+            NameField.NAME_Q_SYN,
+            query_stems,
+        )
+        query_terms_list = query_value.split()
+        query_stems_by_term = {}
+        if query_stems and len(query_stems) == len(query_terms_list):
+            query_stems_by_term = {
+                term: {query_stems[index]}
+                for index, term in enumerate(query_terms_list)
+                if query_stems[index]
+            }
+        synonym_family = {
+            token
+            for part in families_by_term.values()
+            for token in part
+        }
+        synonym_family_stems = {
+            stem.lower()
+            for stem in (
+                analyze_stemmed_agro_tokens(solr, " ".join(sorted(synonym_family)))
+                if synonym_family
+                else []
+            )
+        }
         for result in results.get("response", {}).get("docs"):
             def split_highlights(highlights: list[str]):
                 """Split list of strings into list of single terms, removing HTML tags"""
@@ -246,17 +255,43 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 for term in params.query["value"].split(" "):
                     if any(x for x in exact_highlights_full_terms if term.upper() in x):
                         exact_highlights.append(term.upper())
+            exact_highlights = apply_initials_group_exact_highlights(
+                exact_highlights,
+                params.query["value"].split(),
+                result.get("name") or "",
+            )
             if stem_highlights := highlight_raw.get(NameField.NAME_Q_STEM_HIGHLIGHT.value, []):
                 stem_highlights = [x for x in split_highlights(stem_highlights) if x not in (exact_highlights)]
             if phonetic_highlights := highlight_raw.get(NameField.NAME_Q_PHON_EN.value, []):
                 other_highlights = exact_highlights + stem_highlights
                 phonetic_highlights = [x.upper() for x in split_highlights(phonetic_highlights) if x.upper() not in other_highlights and x.strip()]
-            if synonym_highlights := highlight_raw.get(NameField.NAME_Q_SYN.value, []):
-                other_highlights = exact_highlights + stem_highlights + phonetic_highlights
-                synonym_highlights = [x.upper() for x in synonym_highlights if x.upper() not in other_highlights]
+            other_highlights = exact_highlights + stem_highlights + phonetic_highlights
+            synonym_candidates = candidate_synonym_highlight_tokens(
+                highlight_raw.get(NameField.NAME_Q_SYN.value, []) or [],
+                result.get("name") or "",
+            )
+            synonym_highlights = [
+                token
+                for token in keep_family_synonym_highlights(
+                    synonym_candidates,
+                    synonym_family,
+                    synonym_family_stems,
+                )
+                if token not in other_highlights
+            ]
+            bucket = classify_conflict_bucket(
+                query_value,
+                result.get("name") or "",
+                families_by_term,
+                None,
+                query_stems_by_term,
+            )
+            if bucket == "drop":
+                continue
             docs.append({
                 **result,
                 "name": result["name"].upper(),
+                "bucket": bucket,
                 "highlighting": {
                     "exact": list(set(exact_highlights)),
                     "stems": list(set(stem_highlights)),
@@ -264,6 +299,13 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     "synonyms": list(set(synonym_highlights))
                 }
             })
+        docs = rank_conflict_docs(
+            docs,
+            query_value,
+            families_by_term,
+            None,
+            query_stems_by_term,
+        )
         if wildcard.leading and not wildcard.trailing and start == 0:
             docs = apply_leading_wildcard_rank(docs, value)
         # save search in the db
@@ -289,7 +331,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     "rows": rows or solr.default_rows,
                     "start": start or solr.default_start,
                 },
-                "totalResults": results.get("response", {}).get("numFound"),
+                "totalResults": len(docs),
                 "results": docs
             },
         }
