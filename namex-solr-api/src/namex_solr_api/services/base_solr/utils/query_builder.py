@@ -369,6 +369,9 @@ class QueryBuilder:
         """Build a synonym field clause."""
         if not synonym_as_raw:
             return f"{field_value}:{' '.join(synonym_terms)}"
+        if field_value != leaf_field:
+            # A block-join prefix ({!parent}/{!child}) cannot wrap an embedded _query_ clause
+            return f"{field_value}:{' '.join(synonym_terms)}"
         raw_parts = []
         for token in synonym_terms:
             safe = token.lower()
@@ -384,9 +387,6 @@ class QueryBuilder:
         raw_clause = " AND ".join(raw_parts)
         if extra_parts:
             raw_clause = f"({raw_clause} OR {' OR '.join(extra_parts)})"
-        prefix = field_value[: -len(leaf_field)] if field_value.endswith(leaf_field) else ""
-        if prefix:
-            return f"{prefix}({raw_clause})"
         return raw_clause
 
     @staticmethod
