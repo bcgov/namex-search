@@ -74,26 +74,12 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
         # set base query params
         query_json: dict = request_json.get("query", {})
         value = query_json.get("value")
-        # Phrase-only search is independent of the name box. Do not parse
-        # leading/trailing * as the conflict wildcard operator.
-        exact_phrase_only = str(request_json.get("exact_phrase_only", "")).strip().lower() in {
-            "1", "true", "yes"
-        }
-        if exact_phrase_only:
-            wildcard = parse_conflict_wildcard(None)
-            value = (value or "").strip()
-        else:
-            wildcard = parse_conflict_wildcard(value)
-            value = wildcard.value
+
+        wildcard = parse_conflict_wildcard(value)
+        value = wildcard.value
         normalized_nr_num = normalize_nr_num(query_json.get(PCField.NR_NUM.value, "")) or ""
         query = {
-            "value": (
-                prep_query_str_namex(value, "replace")
-                if exact_phrase_only
-                else remove_designation_tokens(
-                    prep_query_str_namex(normalize_conflict_initials(value), "replace")
-                )
-            ),
+            "value": remove_designation_tokens(prep_query_str_namex(normalize_conflict_initials(value), "replace")),
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
             PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
@@ -143,6 +129,13 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             int(current_app.config["SOLR_SVC_NAMEX_MAX_HIGHLIGHTED_DOCS"]),
         )
         constant_score_terms = outer_wildcard_constant_score_terms(wildcard, query["value"])
+        full_query_boosts = mark_wildcard_constant_score_boosts(
+            apply_conflict_wildcard_boosts(
+                solr.get_name_search_full_query_boost(value),
+                wildcard.leading,
+            ),
+            constant_score_terms,
+        )
 
         params = QueryParams(
             query=query,
@@ -175,13 +168,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             query_synonym_fields={
                 NameField.NAME_Q_SYN: "child"
             },
-            full_query_boosts=mark_wildcard_constant_score_boosts(
-                apply_conflict_wildcard_boosts(
-                    solr.get_name_search_full_query_boost(value),
-                    wildcard.leading,
-                ),
-                constant_score_terms,
-            ),
+            full_query_boosts=full_query_boosts,
             # TODO: add this as LD flag ? names ticket: #32885
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"],
             constant_score_terms=constant_score_terms,
