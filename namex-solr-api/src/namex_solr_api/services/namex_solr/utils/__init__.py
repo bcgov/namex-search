@@ -4,6 +4,7 @@ from .conflict_bucket import (
     classify_conflict_bucket,
     cover_query_token,
     rank_conflict_docs,
+    visible_conflict_bucket,
 )
 from .formatting_helpers import (
     DISTINCTIVE_COVERAGE_BOOST_WEIGHT,
@@ -18,7 +19,6 @@ from .formatting_helpers import (
     distinctive_coverage_terms,
     initials_group_runs,
     mark_wildcard_constant_score_boosts,
-    merge_reserved_coverage,
     normalize_conflict_initials,
     normalize_nr_num,
     outer_wildcard_constant_score_terms,
@@ -26,10 +26,17 @@ from .formatting_helpers import (
     prep_query_str_namex,
     remove_designation_tokens,
     reserved_coverage_params,
+    reserved_glued_concat_query,
+    reserved_prefix_params,
     should_run_reserved_coverage,
     strip_trailing_designations,
 )
-from .namex_search_helper import namex_search
+from .namex_search_helper import (
+    apply_embedded_reserved_retrieve,
+    embed_reserved_retrieve_query,
+    join_embedded_conflict_query,
+    namex_search,
+)
 from .phonetic import keep_phonetic_match
 from .synonym_helpers import (
     candidate_synonym_highlight_tokens,

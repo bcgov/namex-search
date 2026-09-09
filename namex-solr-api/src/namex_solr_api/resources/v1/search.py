@@ -17,12 +17,12 @@ from namex_solr_api.services.namex_solr.utils import (
     analyze_stemmed_agro_tokens,
     apply_conflict_wildcard_boosts,
     apply_initials_group_exact_highlights,
+    apply_embedded_reserved_retrieve,
     apply_leading_wildcard_rank,
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
     keep_family_synonym_highlights,
     mark_wildcard_constant_score_boosts,
-    merge_reserved_coverage,
     namex_search,
     normalize_conflict_initials,
     normalize_nr_num,
@@ -31,9 +31,8 @@ from namex_solr_api.services.namex_solr.utils import (
     prep_query_str_namex,
     rank_conflict_docs,
     remove_designation_tokens,
-    reserved_coverage_params,
     retrieve_synonym_families_by_term,
-    should_run_reserved_coverage,
+    visible_conflict_bucket,
 )
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
@@ -187,32 +186,8 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             constant_score_terms=constant_score_terms,
         )
 
+        params = apply_embedded_reserved_retrieve(params, solr, strict, start)
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
-        or_docs = results.get("response", {}).get("docs") or []
-        coverage_params = (
-            reserved_coverage_params(params)
-            if should_run_reserved_coverage(strict, start, params.query.get("value", ""))
-            else None
-        )
-        if coverage_params:
-            coverage_results, coverage_highlighting = _conflict_solr_search(
-                coverage_params,
-                True,
-                max_highlighted_docs,
-            )
-            or_docs = merge_reserved_coverage(
-                coverage_results.get("response", {}).get("docs") or [],
-                or_docs,
-                rows,
-            )
-            solr_highlighting = {**solr_highlighting, **coverage_highlighting}
-            results = {
-                **results,
-                "response": {
-                    **results.get("response", {}),
-                    "docs": or_docs,
-                },
-            }
         docs = []
         query_value = params.query.get("value", "")
         query_stems = analyze_stemmed_agro_tokens(solr, query_value)
@@ -243,7 +218,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 else []
             )
         }
-        for result in results.get("response", {}).get("docs"):
+        for result in results.get("response", {}).get("docs") or []:
             def split_highlights(highlights: list[str]):
                 """Split list of strings into list of single terms, removing HTML tags"""
                 resp = []
@@ -286,15 +261,15 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 )
                 if token not in other_highlights
             ]
-            bucket = classify_conflict_bucket(
-                query_value,
-                result.get("name") or "",
-                families_by_term,
-                None,
-                query_stems_by_term,
+            bucket = visible_conflict_bucket(
+                classify_conflict_bucket(
+                    query_value,
+                    result.get("name") or "",
+                    families_by_term,
+                    None,
+                    query_stems_by_term,
+                )
             )
-            if bucket == "drop":
-                continue
             docs.append({
                 **result,
                 "name": result["name"].upper(),

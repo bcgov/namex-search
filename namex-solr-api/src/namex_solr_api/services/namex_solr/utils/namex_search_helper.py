@@ -1,5 +1,6 @@
 """NameX solr search functions."""
 import re
+from dataclasses import replace
 
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr import NamexSolr
@@ -7,6 +8,12 @@ from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 
 from .add_category_filters import add_category_filters
 from .analysis_helpers import analyze_stemmed_agro_tokens
+from .formatting_helpers import (
+    reserved_coverage_params,
+    reserved_glued_concat_query,
+    reserved_prefix_params,
+    should_run_reserved_coverage,
+)
 
 
 def format_full_query_boost(info: dict) -> str:
@@ -30,18 +37,24 @@ def format_full_query_boost(info: dict) -> str:
     return f"({clause}{score_op}{boost})"
 
 
-def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
-    """Return the list of possible conflicts from Solr that match the query."""
-    # initialize payload with base doc query (init query / filter)
+def build_namex_query_payload(
+    params: QueryParams,
+    solr: NamexSolr,
+    is_name_search: bool,
+    is_strict: bool,
+    clause_bridge: str | None = None,
+) -> dict[str, list[str]]:
+    if clause_bridge is None:
+        clause_bridge = "AND" if is_strict else "OR"
     stemmed_terms = analyze_stemmed_agro_tokens(solr, params.query.get("value", ""))
-    initial_queries = solr.query_builder.build_base_query(
+    return solr.query_builder.build_base_query(
         query=params.query,
         fields=params.query_fields,
         boost_fields=params.query_boost_fields,
         fuzzy_fields=params.query_fuzzy_fields,
         synonym_fields=params.query_synonym_fields,
         is_child_search=is_name_search,
-        clause_bridge="AND" if is_strict else "OR",
+        clause_bridge=clause_bridge,
         stemmed_terms=stemmed_terms,
         synonym_as_raw=True,
         expand_leftover_raw_synonyms=bool(
@@ -49,12 +62,58 @@ def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_
         ),
         constant_score_terms=frozenset(params.constant_score_terms or []),
     )
+
+
+def query_with_full_boosts(
+    params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool
+) -> str:
+    payload = build_namex_query_payload(params, solr, is_name_search, is_strict)
+    for info in params.full_query_boosts:
+        payload["query"] += f" OR {format_full_query_boost(info)}"
+    return payload["query"]
+
+
+def join_embedded_conflict_query(or_query: str, reserved_queries: list[str]) -> str | None:
+    if not or_query or not reserved_queries:
+        return None
+    return " OR ".join(f"({part})" for part in [or_query, *reserved_queries])
+
+
+def embed_reserved_retrieve_query(params: QueryParams, solr: NamexSolr, is_strict: bool, start: int) -> str | None:
+    if not should_run_reserved_coverage(is_strict, start, params.query.get("value", "")):
+        return None
+    reserved = []
+    if prefix_params := reserved_prefix_params(params):
+        reserved.append(query_with_full_boosts(prefix_params, solr, True, True))
+    if coverage_params := reserved_coverage_params(params):
+        reserved.append(query_with_full_boosts(coverage_params, solr, True, True))
+    if concat_query := reserved_glued_concat_query(params.query.get("value", ""), solr=solr):
+        reserved.append(concat_query)
+    return join_embedded_conflict_query(query_with_full_boosts(params, solr, True, False), reserved)
+
+
+def apply_embedded_reserved_retrieve(params: QueryParams, solr: NamexSolr, is_strict: bool, start: int) -> QueryParams:
+    if fat_query := embed_reserved_retrieve_query(params, solr, is_strict, start):
+        return replace(params, override_query=fat_query)
+    return params
+
+
+def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):
+    """Return the list of possible conflicts from Solr that match the query."""
+    initial_queries = build_namex_query_payload(
+        params,
+        solr,
+        is_name_search,
+        is_strict,
+        clause_bridge="AND" if is_strict else "OR",
+    )
     for info in params.full_query_boosts:
         initial_queries["query"] += f" OR {format_full_query_boost(info)}"
+    built_query = initial_queries["query"]
+    if override_query := getattr(params, "override_query", None):
+        initial_queries["query"] = override_query
 
-    highlight_query = None
-    if params.highlighted_fields:
-        highlight_query = initial_queries["query"]
+    highlight_query = built_query if params.highlighted_fields else None
 
     # add defaults
     parent_field = NameField.PARENT_TYPE.value if is_name_search else PCField.TYPE.value
