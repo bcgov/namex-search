@@ -332,7 +332,7 @@ def count_name_q_exact_hits(token: str, solr) -> int | None:
     try:
         response = solr.query({"query": f"name_q_exact:{token}"}, start=0, rows=1)
         return int((response.get("response") or {}).get("numFound") or 0)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -358,8 +358,7 @@ def _reserved_lane_params(
     params,
     terms: list[str],
     *,
-    expand_leftover: bool,
-    include_synonyms: bool,
+    include_family: bool,
     rows_cap: int,
     full_query_boosts: list[dict] | None = None,
 ):
@@ -374,7 +373,7 @@ def _reserved_lane_params(
         for field, role in (params.query_fields or {}).items()
         if field != NameField.NAME_Q_PHON_EN
     }
-    synonym_fields = params.query_synonym_fields if include_synonyms else {}
+    synonym_fields = params.query_synonym_fields if include_family else {}
     lane_rows = params.rows if params.rows and params.rows > 0 else rows_cap
     return replace(
         params,
@@ -384,7 +383,7 @@ def _reserved_lane_params(
         full_query_boosts=list(full_query_boosts or []),
         query_fields=query_fields,
         query_synonym_fields=synonym_fields,
-        expand_leftover_raw_synonyms=expand_leftover,
+        expand_leftover_raw_synonyms=include_family,
     )
 
 
@@ -403,8 +402,7 @@ def reserved_prefix_params(params):
     return _reserved_lane_params(
         params,
         terms,
-        expand_leftover=False,
-        include_synonyms=False,
+        include_family=False,
         rows_cap=PREFIX_LANE_ROWS,
         full_query_boosts=boosts,
     )
@@ -418,8 +416,7 @@ def reserved_coverage_params(params):
     return _reserved_lane_params(
         params,
         terms,
-        expand_leftover=True,
-        include_synonyms=True,
+        include_family=True,
         rows_cap=rows_cap,
     )
 

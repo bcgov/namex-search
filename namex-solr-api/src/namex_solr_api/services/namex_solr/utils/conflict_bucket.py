@@ -230,10 +230,9 @@ def _consecutive_concat_cover(query: str, name_tokens: list[str]) -> bool:
         return False
     pieces = [token.lower().strip(".") for token in name_tokens if token]
     for start in range(len(pieces)):
-        acc, used = "", 0
-        for token in pieces[start:]:
+        acc = ""
+        for used, token in enumerate(pieces[start:], start=1):
             acc += token
-            used += 1
             if used >= 2 and acc == target:  # noqa: PLR2004
                 return True
             if len(acc) > len(target):
@@ -257,9 +256,10 @@ def cover_query_token(  # noqa: PLR0913
         family_stems = {stem.lower() for stem in (family_stems or set())}
         query_lower = query.lower()
         sound_tokens = name_tokens if sound_tokens is None else sound_tokens
-        if any(name_token.lower() == query_lower for name_token in name_tokens):
-            cover = _COVER_EXACT
-        elif _consecutive_concat_cover(query, name_tokens):
+        if (
+            any(name_token.lower() == query_lower for name_token in name_tokens)
+            or _consecutive_concat_cover(query, name_tokens)
+        ):
             cover = _COVER_EXACT
         elif _stem_cover(query, name_tokens, query_stems):
             cover = _COVER_STEM

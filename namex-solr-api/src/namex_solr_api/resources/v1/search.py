@@ -16,8 +16,8 @@ from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import (
     analyze_stemmed_agro_tokens,
     apply_conflict_wildcard_boosts,
-    apply_initials_group_exact_highlights,
     apply_embedded_reserved_retrieve,
+    apply_initials_group_exact_highlights,
     apply_leading_wildcard_rank,
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
