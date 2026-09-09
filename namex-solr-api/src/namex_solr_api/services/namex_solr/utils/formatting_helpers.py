@@ -153,6 +153,10 @@ DISTINCTIVE_COVERAGE_BOOST_WEIGHT = "80"
 _DISTINCTIVE_MIN_TERM_LEN = 4
 _COVERAGE_MIN_TERM_LEN = 3
 MIN_COVERAGE_TERMS = 2
+PREFIX_LANE_ROWS = 80
+GLUED_FIRST_MIN_LEN = 6
+CONCAT_RETRIEVE_BOOST = "80"
+EXACT_CONCAT_MAX_HITS = 40
 
 
 def is_coverage_prefix_term(token: str) -> bool:
@@ -306,6 +310,42 @@ def distinctive_coverage_terms(query_value: str) -> list[str]:
     return [token for token in (query_value or "").split() if is_coverage_prefix_term(token)]
 
 
+def reserved_prefix_terms(query_value: str) -> list[str]:
+    """Coverage tokens before the leftover (last coverage term)."""
+    terms = distinctive_coverage_terms(query_value)
+    if len(terms) < MIN_COVERAGE_TERMS:
+        return []
+    return terms[:-1]
+
+
+def glued_first_coverage_token(query_value: str) -> str | None:
+    terms = distinctive_coverage_terms(query_value)
+    if len(terms) < MIN_COVERAGE_TERMS:
+        return None
+    first = (terms[0] or "").strip().lower()
+    return first if len(first) >= GLUED_FIRST_MIN_LEN and first.isalpha() else None
+
+
+def count_name_q_exact_hits(token: str, solr) -> int | None:
+    if solr is None or not token:
+        return None
+    try:
+        response = solr.query({"query": f"name_q_exact:{token}"}, start=0, rows=1)
+        return int((response.get("response") or {}).get("numFound") or 0)
+    except Exception:
+        return None
+
+
+def reserved_glued_concat_query(query_value: str, *, exact_hits: int | None = None, solr=None) -> str | None:
+    token = glued_first_coverage_token(query_value)
+    if not token:
+        return None
+    hits = exact_hits if exact_hits is not None else count_name_q_exact_hits(token, solr)
+    if hits is None or hits < 1 or hits > EXACT_CONCAT_MAX_HITS:
+        return None
+    return f"(name_q_exact:{token}^{CONCAT_RETRIEVE_BOOST})"
+
+
 def should_run_reserved_coverage(strict: bool, start: int, query_value: str) -> bool:
     return (
         not strict
@@ -314,48 +354,71 @@ def should_run_reserved_coverage(strict: bool, start: int, query_value: str) -> 
     )
 
 
-def reserved_coverage_params(params):
+def _reserved_lane_params(
+    params,
+    terms: list[str],
+    *,
+    include_family: bool,
+    rows_cap: int,
+    full_query_boosts: list[dict] | None = None,
+):
     from dataclasses import replace
 
     from namex_solr_api.services.namex_solr.doc_models import NameField
 
-    terms = distinctive_coverage_terms(params.query.get("value", ""))
-    if len(terms) < MIN_COVERAGE_TERMS:
+    if len(terms) < 1:
         return None
     query_fields = {
         field: role
         for field, role in (params.query_fields or {}).items()
         if field != NameField.NAME_Q_PHON_EN
     }
+    synonym_fields = params.query_synonym_fields if include_family else {}
+    lane_rows = params.rows if params.rows and params.rows > 0 else rows_cap
     return replace(
         params,
         query={**params.query, "value": " ".join(terms)},
         start=0,
-        full_query_boosts=[],
+        rows=min(rows_cap, lane_rows),
+        full_query_boosts=list(full_query_boosts or []),
         query_fields=query_fields,
-        expand_leftover_raw_synonyms=True,
+        query_synonym_fields=synonym_fields,
+        expand_leftover_raw_synonyms=include_family,
     )
 
 
-def merge_reserved_coverage(
-    coverage_docs: list[dict],
-    or_docs: list[dict],
-    rows: int,
-    id_field: str = "id",
-) -> list[dict]:
-    if rows <= 0:
-        return []
-    merged: list[dict] = []
-    seen: set[str] = set()
-    for doc in list(coverage_docs or []) + list(or_docs or []):
-        key = doc.get(id_field)
-        if key is None or key in seen:
-            continue
-        seen.add(key)
-        merged.append(doc)
-        if len(merged) >= rows:
-            break
-    return merged
+def reserved_prefix_params(params):
+    from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    terms = reserved_prefix_terms(params.query.get("value", ""))
+    if not terms:
+        return None
+    prefix = " ".join(terms)
+    boosts = [
+        {"field": NameField.NAME_Q_EXACT, "value": prep_query_str(prefix), "boost": "3"},
+        {"field": NameField.NAME_Q_SINGLE, "value": prep_query_str(prefix), "boost": "2"},
+    ]
+    return _reserved_lane_params(
+        params,
+        terms,
+        include_family=False,
+        rows_cap=PREFIX_LANE_ROWS,
+        full_query_boosts=boosts,
+    )
+
+
+def reserved_coverage_params(params):
+    terms = distinctive_coverage_terms(params.query.get("value", ""))
+    if len(terms) < MIN_COVERAGE_TERMS:
+        return None
+    rows_cap = params.rows if params.rows and params.rows > 0 else PREFIX_LANE_ROWS
+    return _reserved_lane_params(
+        params,
+        terms,
+        include_family=True,
+        rows_cap=rows_cap,
+    )
 
 
 def build_distinctive_coverage_boosts(

@@ -5,7 +5,11 @@ from namex_solr_api.services.base_solr.utils.query_builder import (
     QueryBuilder,
 )
 
-from .formatting_helpers import normalize_conflict_initials
+from .formatting_helpers import (
+    GLUED_FIRST_MIN_LEN,
+    distinctive_coverage_terms,
+    normalize_conflict_initials,
+)
 from .phonetic import keep_phonetic_match, replace_special_leading_sounds
 from .synonym_helpers import keep_family_synonym_highlights, name_surface_tokens
 
@@ -220,6 +224,22 @@ def _sets_for_term(mapping: dict[str, set[str]], term: str) -> set[str]:
     return mapping.get(term) or mapping.get(term.lower()) or set()
 
 
+def _consecutive_concat_cover(query: str, name_tokens: list[str]) -> bool:
+    target = (query or "").lower()
+    if len(target) < GLUED_FIRST_MIN_LEN:
+        return False
+    pieces = [token.lower().strip(".") for token in name_tokens if token]
+    for start in range(len(pieces)):
+        acc = ""
+        for used, token in enumerate(pieces[start:], start=1):
+            acc += token
+            if used >= 2 and acc == target:  # noqa: PLR2004
+                return True
+            if len(acc) > len(target):
+                break
+    return False
+
+
 def cover_query_token(  # noqa: PLR0913
     query_token: str,
     name_tokens: list[str],
@@ -236,7 +256,10 @@ def cover_query_token(  # noqa: PLR0913
         family_stems = {stem.lower() for stem in (family_stems or set())}
         query_lower = query.lower()
         sound_tokens = name_tokens if sound_tokens is None else sound_tokens
-        if any(name_token.lower() == query_lower for name_token in name_tokens):
+        if (
+            any(name_token.lower() == query_lower for name_token in name_tokens)
+            or _consecutive_concat_cover(query, name_tokens)
+        ):
             cover = _COVER_EXACT
         elif _stem_cover(query, name_tokens, query_stems):
             cover = _COVER_STEM
@@ -364,6 +387,100 @@ def distinctive_cover_rank(
     return covered, strong
 
 
+def _token_cover(
+    term: str,
+    name_tokens: list[str],
+    family_by_term: dict[str, set[str]] | None,
+    family_stems_by_term: dict[str, set[str]] | None,
+    query_stems_by_term: dict[str, set[str]] | None,
+) -> str | None:
+    return cover_query_token(
+        term,
+        name_tokens,
+        _sets_for_term(family_by_term or {}, term),
+        _sets_for_term(family_stems_by_term or {}, term),
+        _sets_for_term(query_stems_by_term or {}, term),
+        name_tokens,
+    )
+
+
+def conflict_rank_key(
+    query_value: str,
+    name: str,
+    family_by_term: dict[str, set[str]] | None = None,
+    family_stems_by_term: dict[str, set[str]] | None = None,
+    query_stems_by_term: dict[str, set[str]] | None = None,
+) -> tuple[int, int, int, int, int, int]:
+    """Pin closer leftover after identity is present.
+
+    identity_present: first coverage token is family or better (bc counts).
+    leftover_exact: last coverage token is exact/stem, not only family.
+    first_identity_tier: 2 exact/stem, 1 family/fuzzy, 0 missing/phonetic.
+    leftover_covered: last coverage term matched at all.
+    prefix_complete: every prefix-span token is exact/stem.
+    """
+    terms = distinctive_coverage_terms(query_value)
+    query_terms = {term.lower() for term in (query_value or "").split() if term}
+    name_tokens = _usable_name_tokens(name, query_terms)
+    _covered, strong = distinctive_cover_rank(
+        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term
+    )
+    if not terms:
+        return 0, 0, 0, 0, 0, strong
+
+    first_cover = _token_cover(
+        terms[0], name_tokens, family_by_term, family_stems_by_term, query_stems_by_term
+    )
+    if first_cover in _COVER_STRONG:
+        first_tier = 2
+    elif first_cover in {_COVER_FAMILY, _COVER_FUZZY}:
+        first_tier = 1
+    else:
+        first_tier = 0
+    identity_present = int(first_tier > 0)
+
+    leftover_exact = 0
+    leftover_covered = 0
+    prefix_span = terms[:-1]
+    if len(terms) >= 2:  # noqa: PLR2004
+        leftover_cover = _token_cover(
+            terms[-1],
+            name_tokens,
+            family_by_term,
+            family_stems_by_term,
+            query_stems_by_term,
+        )
+        leftover_covered = int(leftover_cover is not None)
+        leftover_exact = int(leftover_cover in _COVER_STRONG)
+    else:
+        prefix_span = []
+
+    if prefix_span:
+        prefix_complete = int(
+            all(
+                _token_cover(
+                    term,
+                    name_tokens,
+                    family_by_term,
+                    family_stems_by_term,
+                    query_stems_by_term,
+                )
+                in _COVER_STRONG
+                for term in prefix_span
+            )
+        )
+    else:
+        prefix_complete = 1
+    return (
+        identity_present,
+        leftover_exact,
+        first_tier,
+        leftover_covered,
+        prefix_complete,
+        strong,
+    )
+
+
 def rank_conflict_docs(
     docs: list[dict],
     query_value: str,
@@ -375,7 +492,7 @@ def rank_conflict_docs(
         docs,
         key=lambda doc: tuple(
             -n
-            for n in distinctive_cover_rank(
+            for n in conflict_rank_key(
                 query_value,
                 doc.get("name") or "",
                 family_by_term,
@@ -384,6 +501,11 @@ def rank_conflict_docs(
             )
         ),
     )
+
+
+def visible_conflict_bucket(bucket: str) -> str:
+    """Keep Solr hits on the page. Uncovered identity is synonym, ranked last."""
+    return BUCKET_SYNONYM if bucket == BUCKET_DROP else bucket
 
 
 def classify_conflict_bucket(

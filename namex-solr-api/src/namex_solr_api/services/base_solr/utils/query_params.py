@@ -26,3 +26,4 @@ class QueryParams:  # pylint: disable=too-few-public-methods
     # Outer-wildcard tokens scored as presence (Solr ^=). Empty for /nrs
     # and normal conflict search so BM25 defaults stay unchanged.
     constant_score_terms: list[str] = field(default_factory=list)
+    override_query: str | None = None
