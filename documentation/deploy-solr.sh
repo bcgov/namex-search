@@ -233,6 +233,47 @@ wait_for_healthy_backend() {
     return 1
 }
 
+wait_for_replication() {
+    local vm_name="$1"
+    local zone="$2"
+    local core="${3:-name_request_follower}"
+    local max_attempts="${4:-120}"
+    local interval=5
+
+    log "Waiting for ${vm_name} to fully replicate from leader…"
+    for i in $(seq 1 "${max_attempts}"); do
+        local details
+        details=$(gcloud compute ssh "${vm_name}" \
+            --zone="${zone}" --project="${PROJECT_ID}" \
+            --tunnel-through-iap \
+            --command="curl -sf 'http://localhost:8983/solr/${core}/replication?command=details&wt=json'" \
+            2>/dev/null || echo '{}')
+
+        local is_replicating follower_gen leader_gen
+        is_replicating=$(echo "$details" | python3 -c "import sys,json; print(json.load(sys.stdin).get('details',{}).get('follower',{}).get('isReplicating','true'))" 2>/dev/null || echo "true")
+        follower_gen=$(echo "$details" | python3 -c "import sys,json; print(json.load(sys.stdin).get('details',{}).get('generation',0))" 2>/dev/null || echo "0")
+
+        local leader_details
+        leader_details=$(gcloud compute ssh "${vm_name}" \
+            --zone="${zone}" --project="${PROJECT_ID}" \
+            --tunnel-through-iap \
+            --command="curl -sf 'http://localhost:8983/solr/${core}/replication?command=indexversion&wt=json'" \
+            2>/dev/null || echo '{}')
+        leader_gen=$(echo "$leader_details" | python3 -c "import sys,json; print(json.load(sys.stdin).get('generation',0))" 2>/dev/null || echo "0")
+
+        if [[ "$is_replicating" == "false" ]] && [[ "$follower_gen" -eq "$leader_gen" ]] && [[ "$leader_gen" -gt 0 ]]; then
+            log "Follower fully replicated (generation=${follower_gen})."
+            return 0
+        fi
+
+        log "Replication in progress… isReplicating=${is_replicating}, follower_gen=${follower_gen}, leader_gen=${leader_gen}"
+        sleep "${interval}"
+    done
+
+    echo "ERROR: Follower did not complete replication within $((max_attempts * interval))s."
+    return 1
+}
+
 reset_reindex_flag() {
     log "Resetting REINDEX_CORE in secret…"
     oc -n "${OC_NAMESPACE}" patch secret "${IMPORTER_SECRET}" \
@@ -368,7 +409,7 @@ deploy_instances() {
         exit 1
     fi
 
-    # New is healthy → safe to remove old backend
+    # New is healthy → safe to remove old backend so the importer writes only to the new leader
     remove_old_backend "${LEADER_BACKEND}" \
         "${NEW_LEADER_GRP}" "${LEADER_ZONE}" "${OLD_LEADER_GRP}" "${OLD_LEADER_ZONE}"
 
@@ -377,7 +418,7 @@ deploy_instances() {
         log "Removing old leader ${OLD_LEADER_VM} from shared instance group ${NEW_LEADER_GRP}…"
         gcloud compute instance-groups unmanaged remove-instances "${NEW_LEADER_GRP}" \
             --zone="${LEADER_ZONE}" --instances="${OLD_LEADER_VM}" \
-            --project="${PROJECT_ID}" 2>/dev/null || true
+            --project "${PROJECT_ID}" 2>/dev/null || true
     fi
 
     # Trap ensures REINDEX_CORE resets even on failure (idempotent)
@@ -421,6 +462,20 @@ deploy_instances() {
     log "Importer job completed successfully."
     reset_reindex_flag
 
+    # Verify the import actually landed on the new leader before deleting old / creating followers
+    log "Verifying documents on new leader ${NEW_LEADER_VM}…"
+    IMPORTED_COUNT=$(gcloud compute ssh "${NEW_LEADER_VM}" \
+        --zone="${LEADER_ZONE}" --project="${PROJECT_ID}" \
+        --tunnel-through-iap \
+        --command="curl -sf 'http://localhost:8983/solr/name_request/select?q=*:*&rows=0&wt=json' \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"response\"][\"numFound\"])'" \
+        2>/dev/null || true)
+    if [[ -z "${IMPORTED_COUNT}" || "${IMPORTED_COUNT}" -le 0 ]]; then
+        echo "ERROR: New leader ${NEW_LEADER_VM} has no documents after import (numFound=${IMPORTED_COUNT:-0}). Aborting to preserve old leader data."
+        exit 1
+    fi
+    log "New leader has ${IMPORTED_COUNT} documents."
+
     ########################################
     # DEV ENV → LEADER ONLY
     ########################################
@@ -456,12 +511,8 @@ deploy_instances() {
         -d '{\"set-user-property\":{\"solr.leaderUrl\": \"http://${NEW_LEADER_INTERNAL_IP}:8983/solr/name_request\"}}' \
         'http://localhost:8983/solr/name_request_follower/config/requestHandler?componentName=/replication'"
 
-    retry 5 gcloud compute ssh "${NEW_FOLLOWER_VM}" \
-      --zone="${FOLLOWER_ZONE}" --project="${PROJECT_ID}" \
-      --tunnel-through-iap \
-      --command="curl -sf -X POST -H 'Content-type: application/json' \
-        -d '{\"set-user-property\":{\"solr.leaderUrl\": \"http://${NEW_LEADER_INTERNAL_IP}:8983/solr/name_request\"}}' \
-        'http://localhost:8983/solr/name_request_follower/config/requestHandler'"
+    # Wait for follower to fully replicate before adding to backend
+    wait_for_replication "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "name_request_follower"
 
     # Zone-specific follower instance group
     FOLLOWER_ZONE_SUFFIX=$(basename "${FOLLOWER_ZONE}" | grep -o '[a-c]$')
@@ -590,6 +641,9 @@ deploy_follower_instance() {
       --command="curl -sf -X POST -H 'Content-type: application/json' \
         -d '{\"set-user-property\":{\"solr.leaderUrl\": \"http://${CURRENT_LEADER_IP}:8983/solr/name_request\"}}' \
         'http://localhost:8983/solr/name_request_follower/config/requestHandler?componentName=/replication'"
+
+    # Wait for follower to fully replicate before adding to backend
+    wait_for_replication "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "name_request_follower"
 
     #####################################
     # SWAP INSTANCE GROUP + BACKEND
