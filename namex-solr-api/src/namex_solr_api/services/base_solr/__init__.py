@@ -120,7 +120,6 @@ class Solr:
             if method == "GET":
                 response = session.get(url, params=params, timeout=timeout)
             elif method == "POST" and json_data:
-                print(json_data.get("filter"))
                 response = session.post(url=url, json=json_data, timeout=timeout)
             elif method == "PUT" and json_data:
                 response = session.put(url=url, json=json_data, timeout=timeout)
