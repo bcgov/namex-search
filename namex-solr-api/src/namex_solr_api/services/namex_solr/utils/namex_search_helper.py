@@ -46,7 +46,12 @@ def build_namex_query_payload(
 ) -> dict[str, list[str]]:
     if clause_bridge is None:
         clause_bridge = "AND" if is_strict else "OR"
-    stemmed_terms = analyze_stemmed_agro_tokens(solr, params.query.get("value", ""))
+    value = params.query.get("value", "")
+    if (stem_map := params.stemmed_terms_map) is not None:
+        # one upstream analyzer call serves every lane (lane values are term subsets)
+        stemmed_terms = [stem_map.get(term, term) for term in value.split()]
+    else:
+        stemmed_terms = analyze_stemmed_agro_tokens(solr, value)
     return solr.query_builder.build_base_query(
         query=params.query,
         fields=params.query_fields,
@@ -57,9 +62,6 @@ def build_namex_query_payload(
         clause_bridge=clause_bridge,
         stemmed_terms=stemmed_terms,
         synonym_as_raw=True,
-        expand_leftover_raw_synonyms=bool(
-            getattr(params, "expand_leftover_raw_synonyms", False)
-        ),
         constant_score_terms=frozenset(params.constant_score_terms or []),
     )
 

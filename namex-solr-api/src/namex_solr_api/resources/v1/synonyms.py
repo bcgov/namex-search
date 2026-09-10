@@ -39,7 +39,8 @@ from flask_cors import cross_origin
 
 from namex_solr_api.exceptions import bad_request_response, exception_response
 from namex_solr_api.models import SolrSynonymList
-from namex_solr_api.services import jwt
+from namex_solr_api.services import jwt, solr
+from namex_solr_api.services.namex_solr.utils import analyze_stemmed_agro_token_map, stem_phrase
 
 bp = Blueprint("SYNONYMS", __name__, url_prefix="/synonyms")
 
@@ -54,8 +55,27 @@ def synonym_lists():
         if not isinstance(terms, list) or len(terms) == 0:
             return bad_request_response("Expected required value 'terms' to be a list of strings.")
 
-        terms_synonym_lists = SolrSynonymList.find_all_by_synonyms(terms, SolrSynonymList.Type.ALL)
-        response = {x.synonym: x.synonym_list for x in terms_synonym_lists}
+        # Stored synonym keys are agro stems
+        # - stem the incoming surface terms so we keep sending plain words
+        # - Lookup degrades to the raw terms if analysis fails
+        try:
+            stem_map = analyze_stemmed_agro_token_map(
+                solr, [token for term in terms for token in str(term).lower().split()]
+            )
+        except Exception:
+            stem_map = {}
+        stems_by_term = {str(term): stem_phrase(str(term), stem_map) or str(term).lower() for term in terms}
+
+        terms_synonym_lists = SolrSynonymList.find_all_by_synonyms(
+            list(set(stems_by_term.values())), SolrSynonymList.Type.ALL
+        )
+        lists_by_stem = {x.synonym: x.synonym_list for x in terms_synonym_lists}
+        # respond keyed by the caller's original terms
+        response = {
+            term: lists_by_stem[stem]
+            for term, stem in stems_by_term.items()
+            if stem in lists_by_stem
+        }
         return jsonify(response), HTTPStatus.OK
 
     except Exception as exception:

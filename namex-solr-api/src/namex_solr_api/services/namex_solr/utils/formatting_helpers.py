@@ -383,7 +383,6 @@ def _reserved_lane_params(
         full_query_boosts=list(full_query_boosts or []),
         query_fields=query_fields,
         query_synonym_fields=synonym_fields,
-        expand_leftover_raw_synonyms=include_family,
     )
 
 

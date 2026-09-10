@@ -40,7 +40,11 @@ from flask_cors import cross_origin
 from namex_solr_api.exceptions import bad_request_response, exception_response
 from namex_solr_api.models import SolrSynonymList, User
 from namex_solr_api.services import jwt, solr
-from namex_solr_api.services.namex_solr.utils import get_synonyms
+from namex_solr_api.services.namex_solr.utils import (
+    analyze_stemmed_agro_token_map,
+    get_synonyms,
+    stem_synonym_payload,
+)
 
 bp = Blueprint("SYNONYMS", __name__, url_prefix="/synonyms")
 
@@ -62,12 +66,27 @@ def update_synonyms():
         # update db synonym lists
         synonyms_terms: dict[SolrSynonymList.Type, list[str]] = {}
         synonyms_updated: dict[SolrSynonymList.Type, dict[str, list[str]]] = {}
+        skipped_terms: list[str] = []
         for synonym_type, synonym_lists in synonyms.items():
             # i.e. syn_type = ALL  # noqa: ERA001
             syn_type = SolrSynonymList.Type(synonym_type)
 
+            # Stem every key/member with the same analyzer as name_q_stem_agro so
+            # stored keys match the (post synonym graph) stems in the solr index.
+            # Raises if analysis is unavailable - unstemmed data must never be
+            # persisted, so the whole request errors before any db write.
+            vocabulary = [
+                token
+                for key, members in (synonym_lists or {}).items()
+                for phrase in [key, *(members or [])]
+                for token in (phrase or "").lower().split()
+            ]
+            stem_map = analyze_stemmed_agro_token_map(solr, vocabulary)
+            stemmed_lists, skipped = stem_synonym_payload(synonym_lists, stem_map)
+            skipped_terms += skipped
+
             # i.e. { ALL: ['bc', 'british columbia', 'ab', 'alberta'] }
-            synonyms_terms[syn_type] = SolrSynonymList.create_or_replace_all(synonyms=synonym_lists, synonym_type=syn_type)
+            synonyms_terms[syn_type] = SolrSynonymList.create_or_replace_all(synonyms=stemmed_lists, synonym_type=syn_type)
 
             if request.args.get("prune") == "true":
                 # delete all synonyms under the type which were not referenced in this update
@@ -86,7 +105,11 @@ def update_synonyms():
             # NOTE: Any existing docs will not pickup the new synonym changes until the next reindex
             solr.reload_core()
 
-        return jsonify({"message": "Update successful"}), HTTPStatus.OK
+        response = {"message": "Update successful"}
+        if skipped_terms:
+            # stemmed form exceeded the synonym column limit
+            response["skipped"] = skipped_terms
+        return jsonify(response), HTTPStatus.OK
 
     except Exception as exception:
         return exception_response(exception)

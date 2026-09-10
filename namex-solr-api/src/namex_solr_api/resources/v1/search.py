@@ -14,7 +14,7 @@ from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import (
-    analyze_stemmed_agro_tokens,
+    analyze_stemmed_agro_stem_map,
     apply_conflict_wildcard_boosts,
     apply_embedded_reserved_retrieve,
     apply_initials_group_exact_highlights,
@@ -60,7 +60,7 @@ def _conflict_solr_search(params: QueryParams, is_strict: bool, max_highlighted_
 @bp.post("/possible-conflict-names")
 @cross_origin(origins="*")
 @jwt.requires_auth
-def possible_conflict_names():  # noqa: PLR0912, PLR0915
+def possible_conflict_names():  # noqa: PLR0915
     """Return a list of possible conflict name results from solr."""
     try:
         # NOTE: request_ctx.current_user is set by jwt.requires_auth
@@ -136,6 +136,9 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             constant_score_terms,
         )
 
+        # the Solr analyzer call for stems of all the terms in the query
+        stems_by_term = analyze_stemmed_agro_stem_map(solr, query["value"])
+
         params = QueryParams(
             query=query,
             rows=rows,
@@ -171,39 +174,35 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             # TODO: add this as LD flag ? names ticket: #32885
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"],
             constant_score_terms=constant_score_terms,
+            stemmed_terms_map=stems_by_term,
         )
 
         params = apply_embedded_reserved_retrieve(params, solr, strict, start)
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
         docs = []
         query_value = params.query.get("value", "")
-        query_stems = analyze_stemmed_agro_tokens(solr, query_value)
+        query_terms_list = query_value.split()
+        query_stems = (
+            [stems_by_term.get(term, term) for term in query_terms_list]
+            if stems_by_term
+            else []
+        )
         families_by_term = retrieve_synonym_families_by_term(
             query_value,
             solr.query_builder,
             NameField.NAME_Q_SYN,
             query_stems,
         )
-        query_terms_list = query_value.split()
-        query_stems_by_term = {}
-        if query_stems and len(query_stems) == len(query_terms_list):
-            query_stems_by_term = {
-                term: {query_stems[index]}
-                for index, term in enumerate(query_terms_list)
-                if query_stems[index]
-            }
+        query_stems_by_term = {
+            term: {stems_by_term[term]}
+            for term in query_terms_list
+            if stems_by_term.get(term)
+        }
+        # DB synonyms are stored as agro stems, so the family set is the stem set
         synonym_family = {
             token
             for part in families_by_term.values()
             for token in part
-        }
-        synonym_family_stems = {
-            stem.lower()
-            for stem in (
-                analyze_stemmed_agro_tokens(solr, " ".join(sorted(synonym_family)))
-                if synonym_family
-                else []
-            )
         }
         for result in results.get("response", {}).get("docs") or []:
             def split_highlights(highlights: list[str]):
@@ -244,7 +243,6 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 for token in keep_family_synonym_highlights(
                     synonym_candidates,
                     synonym_family,
-                    synonym_family_stems,
                 )
                 if token not in other_highlights
             ]

@@ -724,12 +724,12 @@
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
       <filter name="stop" ignoreCase="true" words="skipwords.txt"/>
-      <filter name="managedSynonymGraph" managed="ALL"/>
-      <filter name="flattenGraph" />
       <filter name="asciiFolding"/>
       <filter name="classic"/>
       <filter name="englishPossessive"/>
       <filter name="porterStem"/>
+      <filter name="managedSynonymGraph" managed="ALL"/>
+      <filter name="flattenGraph" />
     </analyzer>
     <analyzer type="query">
       <tokenizer name="whitespace"/>

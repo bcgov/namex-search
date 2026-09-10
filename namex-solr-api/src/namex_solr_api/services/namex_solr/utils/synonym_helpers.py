@@ -4,8 +4,6 @@ import re
 from namex_solr_api.models import SolrSynonymList
 from namex_solr_api.services.base_solr.utils.query_builder import SYNONYM_SKIP_WORDS
 
-from .analysis_helpers import analyze_stemmed_agro_tokens
-
 _NAME_SURFACE_TOKEN = re.compile(r"[A-Za-z0-9']+")
 _MIN_STEM_PREFIX = 4
 
@@ -47,20 +45,6 @@ def retrieve_synonym_families_by_term(
                     _add_family_surfaces(allowed, member)
         families[term] = allowed
     return families
-
-
-def retrieve_synonym_family_tokens(
-    query_value: str,
-    query_builder,
-    synonym_field,
-    stemmed_terms: list[str] | None = None,
-) -> set[str]:
-    allowed: set[str] = set()
-    for part in retrieve_synonym_families_by_term(
-        query_value, query_builder, synonym_field, stemmed_terms
-    ).values():
-        allowed.update(part)
-    return allowed
 
 
 def _add_family_surfaces(allowed: set[str], text: str) -> None:
@@ -130,32 +114,3 @@ def _stem_prefix_in_family(token: str, family: set[str], stems: set[str]) -> boo
         if token.startswith(stem) or stem.startswith(token):
             return True
     return False
-
-
-def family_synonym_highlights(
-    query_value: str,
-    tokens: list[str],
-    solr,
-    synonym_field,
-    name: str = "",
-) -> list[str]:
-    candidates = candidate_synonym_highlight_tokens(tokens, name)
-    if not candidates:
-        return []
-    stemmed_terms = analyze_stemmed_agro_tokens(solr, query_value or "")
-    family = retrieve_synonym_family_tokens(
-        query_value, solr.query_builder, synonym_field, stemmed_terms
-    )
-    if not family:
-        return []
-    family_stems = {
-        stem.lower()
-        for stem in analyze_stemmed_agro_tokens(solr, " ".join(sorted(family)))
-    }
-    token_stems = {
-        token.lower(): [
-            stem.lower() for stem in analyze_stemmed_agro_tokens(solr, token.lower())
-        ]
-        for token in {item.lower() for item in candidates}
-    }
-    return keep_family_synonym_highlights(candidates, family, family_stems, token_stems)
