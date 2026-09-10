@@ -8,14 +8,13 @@ from namex_solr_api.config import Config
 from namex_solr_api.resources.v1 import search
 from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
 from namex_solr_api.services.namex_solr import NamexSolr
-from namex_solr_api.services.namex_solr.doc_models import NameField
 from namex_solr_api.services.namex_solr.utils.formatting_helpers import (
+    build_initials_group_boosts,
     normalize_conflict_initials,
     prep_query_str_namex,
     remove_designation_tokens,
     strip_trailing_designations,
 )
-from namex_solr_api.services.namex_solr.utils.namex_search_helper import namex_search
 
 H_EQUIVALENTS = [
     "HH INVESTMENTS",
@@ -32,6 +31,15 @@ JM_EQUIVALENTS = [
     "J&M HOLDINGS",
     "J & M HOLDINGS",
     "J. & M. HOLDINGS",
+]
+
+JRM_SPACED_EQUIVALENTS = [
+    "J R M INVESTMENTS",
+    "J.R.M. INVESTMENTS",
+    "J&R&M INVESTMENTS",
+    "J & R & M INVESTMENTS",
+    "J&R&M& INVESTMENTS",
+    "J & R & M & INVESTMENTS",
 ]
 
 
@@ -75,6 +83,68 @@ def test_bc_does_not_split_to_b_c():
 def test_jm_initial_forms_produce_equivalent_conflict_terms(name):
     """JM / J.M. / J&M / J & M / J. & M. must share conflict AND terms."""
     assert conflict_terms(name) == ["j", "m", "holdings"]
+
+
+@pytest.mark.parametrize("name", JRM_SPACED_EQUIVALENTS)
+def test_jrm_trailing_ampersand_matches_spaced_initials(name):
+    """Trailing & after JRM initials must not become the token 'and'."""
+    assert normalize_conflict_initials(name) == "J R M INVESTMENTS"
+    assert conflict_terms(name) == ["j", "r", "m", "investments"]
+    assert "and" not in conflict_terms(name)
+    boosts = build_initials_group_boosts(conflict_match_terms(name))
+    assert boosts[0]["values"] == ["jrm", "investments"]
+
+
+def test_glued_jrm_stays_one_token():
+    assert normalize_conflict_initials("JRM INVESTMENTS") == "JRM INVESTMENTS"
+    assert conflict_terms("JRM INVESTMENTS") == ["jrm", "investments"]
+    assert build_initials_group_boosts(conflict_match_terms("JRM INVESTMENTS")) == []
+
+
+def test_word_level_ampersands_are_not_stripped():
+    assert normalize_conflict_initials("BE KIND") == "BE KIND"
+    assert conflict_terms("BE KIND") == ["be", "kind"]
+    assert normalize_conflict_initials("BE & KIND") == "BE & KIND"
+    assert conflict_terms("BE & KIND") == ["be", "and", "kind"]
+    assert normalize_conflict_initials("PACIFIC WEST CONSTRUCTION") == (
+        "PACIFIC WEST CONSTRUCTION"
+    )
+    assert normalize_conflict_initials("PACIFIC & WEST CONSTRUCTION") == (
+        "PACIFIC & WEST CONSTRUCTION"
+    )
+    assert conflict_terms("PACIFIC & WEST CONSTRUCTION") == [
+        "pacific",
+        "and",
+        "west",
+        "construction",
+    ]
+    assert normalize_conflict_initials("DAVID & COUNTRYMAN") == "DAVID & COUNTRYMAN"
+    assert conflict_terms("DAVID & COUNTRYMAN") == ["david", "and", "countryman"]
+
+
+def test_typed_literal_and_is_not_punctuation():
+    assert normalize_conflict_initials("J AND R AND M INVESTMENTS") == (
+        "J AND R AND M INVESTMENTS"
+    )
+    assert conflict_terms("J AND R AND M INVESTMENTS") == [
+        "j",
+        "and",
+        "r",
+        "and",
+        "m",
+        "investments",
+    ]
+
+
+def test_david_ampersand_initials_still_glue():
+    assert normalize_conflict_initials("DAVID COUNTRYMAN") == "DAVID COUNTRYMAN"
+    assert normalize_conflict_initials("D&A&V&I&D COUNTRYMAN") == "DAVID COUNTRYMAN"
+    assert normalize_conflict_initials("D&A&V&I&D& COUNTRYMAN") == "DAVID COUNTRYMAN"
+    assert normalize_conflict_initials("D & A & V & I & D & COUNTRYMAN") == (
+        "DAVID COUNTRYMAN"
+    )
+    assert conflict_terms("D&A&V&I&D& COUNTRYMAN") == ["david", "countryman"]
+    assert "and" not in conflict_terms("D&A&V&I&D& COUNTRYMAN")
 
 
 def test_jmj_stays_three_initials():

@@ -16,6 +16,11 @@ _INITIAL_PUNCT = re.compile(
 _DANGLING_INITIAL_DOT = re.compile(r"(?i)(?<![a-z])([a-z])\.(?![a-z])")
 # Same leftover when the period is glued to the next word: "j r m.investments".
 _INITIAL_DOT_WORD = re.compile(r"(?i)(?<![a-z])([a-z])\.([a-z]{2,})")
+# Pairwise loop only consumes letter-to-letter connectors. A leftover & after a
+# 2+ initials run ("J R M& INVESTMENTS", "J R M &") would otherwise become "and".
+_TRAILING_INITIAL_CONNECTOR = re.compile(
+    r"(?i)(?<![a-z])((?:[a-z]\s+)+[a-z])(?:[\s]*[&./,!_\-'@+=]+[\s]*)+(?=[a-z]{2,}|\s*$)"
+)
 _TWO_LETTER = re.compile(r"(?i)(?<![a-z])([a-z]{2})(?![a-z])")
 # Do not split 2-letter tokens that this repo already treats as whole words:
 # - 2-letter English stopwords from namex-solr/.../lang/stopwords_en.txt (includes "in")
@@ -62,6 +67,8 @@ def normalize_conflict_initials(query: str | None) -> str:
 
     normalized = _DANGLING_INITIAL_DOT.sub(r"\1 ", normalized)
     normalized = _INITIAL_DOT_WORD.sub(r"\1 \2", normalized)
+    # Before 4+ glue so "D A V I D& COUNTRYMAN" can still become DAVID.
+    normalized = _TRAILING_INITIAL_CONNECTOR.sub(r"\1 ", normalized)
 
     def split_glued_initials(match: re.Match) -> str:
         token = match.group(1)
