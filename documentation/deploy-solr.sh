@@ -233,44 +233,107 @@ wait_for_healthy_backend() {
     return 1
 }
 
+json_field() {
+    # json_field <json> <key> [default]
+    # Extracts the value of a JSON key (string, integer, or boolean) with grep/sed.
+    # Keys are unique in the Solr payloads this script inspects.
+    local json="$1" key="$2" default="${3:-}" value
+    value=$(printf '%s' "${json}" \
+        | grep -oE "\"${key}\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|[0-9]+|true|false)" \
+        | head -1 \
+        | sed -E 's/^[^:]*:[[:space:]]*"?//; s/"$//')
+    if [[ -n "${value}" ]]; then
+        echo "${value}"
+    else
+        echo "${default}"
+    fi
+}
+
 wait_for_replication() {
-    local vm_name="$1"
-    local zone="$2"
-    local core="${3:-name_request_follower}"
-    local max_attempts="${4:-120}"
+    local follower_vm="$1"
+    local follower_zone="$2"
+    local leader_vm="${3:-}"
+    local leader_zone="${4:-}"
+    local follower_core="${5:-name_request_follower}"
+    local leader_core="${6:-name_request}"
+    local max_attempts="${7:-120}"
     local interval=5
 
-    log "Waiting for ${vm_name} to fully replicate from leader…"
+    local expected_gen=0
+    local leader_attempts=5
+    local leader_retry_interval=10
+    local leader_details
+
+    log "Getting target generation from leader ${leader_vm}…"
+
+    # Capture the leader generation once. The leader may continue receiving
+    # writes after this point; the follower only needs to reach this generation
+    # or anything newer.
+    for attempt in $(seq 1 "${leader_attempts}"); do
+        leader_details=$(gcloud compute ssh "${leader_vm}" \
+            --zone="${leader_zone}" --project="${PROJECT_ID}" \
+            --tunnel-through-iap \
+            --command="curl -sf 'http://localhost:8983/solr/${leader_core}/replication?command=indexversion&wt=json'" \
+            2>/dev/null || echo '{}')
+
+        expected_gen=$(json_field "${leader_details}" generation 0)
+
+        # Numeric hygiene
+        [[ "${expected_gen}" =~ ^[0-9]+$ ]] || expected_gen=0
+
+        if [[ "${expected_gen}" -gt 0 ]]; then
+            break
+        fi
+
+        if [[ "${attempt}" -lt "${leader_attempts}" ]]; then
+            log "Leader generation unavailable (attempt ${attempt}/${leader_attempts}); retrying in ${leader_retry_interval}s…"
+            sleep "${leader_retry_interval}"
+        fi
+    done
+
+    if [[ "${expected_gen}" -le 0 ]]; then
+        echo "ERROR: Could not obtain a valid leader generation from ${leader_vm}."
+        return 1
+    fi
+
+    log "Target leader generation=${expected_gen}. Waiting for ${follower_vm} to replicate…"
+
     for i in $(seq 1 "${max_attempts}"); do
-        local details
-        details=$(gcloud compute ssh "${vm_name}" \
-            --zone="${zone}" --project="${PROJECT_ID}" \
+        local follower_details
+        follower_details=$(gcloud compute ssh "${follower_vm}" \
+            --zone="${follower_zone}" --project="${PROJECT_ID}" \
             --tunnel-through-iap \
-            --command="curl -sf 'http://localhost:8983/solr/${core}/replication?command=details&wt=json'" \
+            --command="curl -sf 'http://localhost:8983/solr/${follower_core}/replication?command=details&wt=json'" \
             2>/dev/null || echo '{}')
 
-        local is_replicating follower_gen leader_gen
-        is_replicating=$(echo "$details" | python3 -c "import sys,json; print(json.load(sys.stdin).get('details',{}).get('follower',{}).get('isReplicating','true'))" 2>/dev/null || echo "true")
-        follower_gen=$(echo "$details" | python3 -c "import sys,json; print(json.load(sys.stdin).get('details',{}).get('generation',0))" 2>/dev/null || echo "0")
+        local is_replicating follower_gen times_replicated err_msg
 
-        local leader_details
-        leader_details=$(gcloud compute ssh "${vm_name}" \
-            --zone="${zone}" --project="${PROJECT_ID}" \
-            --tunnel-through-iap \
-            --command="curl -sf 'http://localhost:8983/solr/${core}/replication?command=indexversion&wt=json'" \
-            2>/dev/null || echo '{}')
-        leader_gen=$(echo "$leader_details" | python3 -c "import sys,json; print(json.load(sys.stdin).get('generation',0))" 2>/dev/null || echo "0")
+        is_replicating=$(json_field "${follower_details}" isReplicating "true")
+        follower_gen=$(json_field "${follower_details}" generation 0)
+        times_replicated=$(json_field "${follower_details}" timesIndexReplicated 0)
+        err_msg=$(json_field "${follower_details}" errMsg "")
 
-        if [[ "$is_replicating" == "false" ]] && [[ "$follower_gen" -eq "$leader_gen" ]] && [[ "$leader_gen" -gt 0 ]]; then
-            log "Follower fully replicated (generation=${follower_gen})."
+        # Numeric hygiene
+        [[ "${follower_gen}" =~ ^[0-9]+$ ]] || follower_gen=0
+        [[ "${times_replicated}" =~ ^[0-9]+$ ]] || times_replicated=0
+
+        if [[ -n "${err_msg}" ]]; then
+            log "Replication cycle error on ${follower_vm}: ${err_msg}"
+        fi
+
+        if [[ "${is_replicating}" == "false" ]] \
+            && [[ "${times_replicated}" -ge 1 ]] \
+            && [[ "${follower_gen}" -ge "${expected_gen}" ]]; then
+            log "Follower fully replicated (generation=${follower_gen}, target=${expected_gen}, timesIndexReplicated=${times_replicated})."
             return 0
         fi
 
-        log "Replication in progress… isReplicating=${is_replicating}, follower_gen=${follower_gen}, leader_gen=${leader_gen}"
+        log "Replication in progress… isReplicating=${is_replicating}, follower_gen=${follower_gen}, target_gen=${expected_gen}, timesIndexReplicated=${times_replicated}"
+
         sleep "${interval}"
     done
 
-    echo "ERROR: Follower did not complete replication within $((max_attempts * interval))s."
+    echo "ERROR: Follower did not reach target generation ${expected_gen} within $((max_attempts * interval))s."
     return 1
 }
 
@@ -464,12 +527,12 @@ deploy_instances() {
 
     # Verify the import actually landed on the new leader before deleting old / creating followers
     log "Verifying documents on new leader ${NEW_LEADER_VM}…"
-    IMPORTED_COUNT=$(gcloud compute ssh "${NEW_LEADER_VM}" \
+    IMPORTED_RESP=$(gcloud compute ssh "${NEW_LEADER_VM}" \
         --zone="${LEADER_ZONE}" --project="${PROJECT_ID}" \
         --tunnel-through-iap \
-        --command="curl -sf 'http://localhost:8983/solr/name_request/select?q=*:*&rows=0&wt=json' \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"response\"][\"numFound\"])'" \
-        2>/dev/null || true)
+        --command="curl -sf 'http://localhost:8983/solr/name_request/select?q=*:*&rows=0&wt=json'" \
+        2>/dev/null || echo '{}')
+    IMPORTED_COUNT=$(json_field "${IMPORTED_RESP}" numFound 0)
     if [[ -z "${IMPORTED_COUNT}" || "${IMPORTED_COUNT}" -le 0 ]]; then
         echo "ERROR: New leader ${NEW_LEADER_VM} has no documents after import (numFound=${IMPORTED_COUNT:-0}). Aborting to preserve old leader data."
         exit 1
@@ -512,7 +575,7 @@ deploy_instances() {
         'http://localhost:8983/solr/name_request_follower/config/requestHandler?componentName=/replication'"
 
     # Wait for follower to fully replicate before adding to backend
-    wait_for_replication "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "name_request_follower"
+    wait_for_replication "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "${NEW_LEADER_VM}" "${LEADER_ZONE}" "name_request_follower" "name_request"
 
     # Zone-specific follower instance group
     FOLLOWER_ZONE_SUFFIX=$(basename "${FOLLOWER_ZONE}" | grep -o '[a-c]$')
@@ -643,7 +706,7 @@ deploy_follower_instance() {
         'http://localhost:8983/solr/name_request_follower/config/requestHandler?componentName=/replication'"
 
     # Wait for follower to fully replicate before adding to backend
-    wait_for_replication "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "name_request_follower"
+    wait_for_replication "${NEW_FOLLOWER_VM}" "${FOLLOWER_ZONE}" "${CURRENT_LEADER_VM}" "${CURRENT_LEADER_ZONE}" "name_request_follower" "name_request"
 
     #####################################
     # SWAP INSTANCE GROUP + BACKEND
