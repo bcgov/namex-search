@@ -648,6 +648,21 @@
       <filter name="classic"/>
     </analyzer>
   </fieldType>
+  <fieldType name="text_basic" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
+      <tokenizer name="whitespace"/>
+      <filter name="lowercase"/>
+      <filter name="asciiFolding"/>
+      <filter name="classic"/>
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer name="whitespace"/>
+      <filter name="lowercase"/>
+      <filter name="asciiFolding"/>
+      <filter name="classic"/>
+    </analyzer>
+  </fieldType>
   <fieldType name="text_stemmed" class="solr.TextField" positionIncrementGap="100">
     <analyzer type="index">
       <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
@@ -708,19 +723,22 @@
       <charFilter name="patternReplace" pattern="([()^{}\\|])" replacement=""/>
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
+      <filter name="stop" ignoreCase="true" words="skipwords.txt"/>
       <filter name="managedSynonymGraph" managed="ALL"/>
-      <!-- May need to add this later. Docs say you need it, but so far it has no effect leaving it out -->
-      <!-- <filter name="flattenGraph" /> -->
+      <filter name="flattenGraph" />
       <filter name="asciiFolding"/>
       <filter name="classic"/>
+      <filter name="englishPossessive"/>
+      <filter name="porterStem"/>
     </analyzer>
     <analyzer type="query">
       <tokenizer name="whitespace"/>
       <filter name="lowercase"/>
       <filter name="stop" ignoreCase="true" words="skipwords.txt"/>
-      <filter name="managedSynonymGraph" managed="ALL"/>
-      <filter name="flattenGraph"/>
       <filter name="asciiFolding"/>
+      <filter name="classic"/>
+      <filter name="englishPossessive"/>
+      <filter name="porterStem"/>
     </analyzer>
   </fieldType>
   <!-- NameX fields -->
@@ -742,6 +760,7 @@
   <field name="name" type="string" indexed="false" stored="true"/>
   <field name="name_q" type="text_stemmed" indexed="true" stored="false"/>
   <field name="name_q_exact" type="single_word_edgeNgram" indexed="true" stored="false"/>
+  <field name="name_q_exact_phrase" type="text_basic" indexed="true" stored="false"/>
   <field name="name_q_single_term" type="multi_word_ngram" indexed="true" stored="true"/>
   <field name="name_q_stem_agro" type="text_stemmed_agro" indexed="true" stored="false"/>
   <field name="name_q_stem_highlight" type="text_stemmed_agro" indexed="true" stored="true"/>
@@ -762,6 +781,7 @@
   <copyField source="nr_num" dest="nr_num_q"/>
   <copyField source="nr_num" dest="nr_num_q_edge"/>
   <copyField source="name" dest="name_q_exact"/>
+  <copyField source="name" dest="name_q_exact_phrase"/>
   <copyField source="name" dest="name_q"/>
   <copyField source="name" dest="name_q_single_term"/>
   <copyField source="name" dest="name_q_stem_agro"/>

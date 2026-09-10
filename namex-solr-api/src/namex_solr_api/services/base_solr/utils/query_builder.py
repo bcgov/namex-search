@@ -56,7 +56,7 @@ class QueryBuilder:
         self.pre_parent_filter_clause = "{!child of=\"" + unique_parent_field.value + ":*\"}"
         self.synonym_field_map = synonym_field_map
 
-    def create_clause(self, field_value: str, term: str, is_child: bool, is_child_search: bool) -> str:
+    def create_clause(self, field_value: str, term: str, is_child: bool, is_child_search: bool, phrase: bool = False) -> str:
         """Return the query clause for the field and term."""
         corp_prefix_regex = r"(^[aA-zZ]+)[0-9]+$"
 
@@ -72,6 +72,9 @@ class QueryBuilder:
 
             return f'({search_field}:"{no_prefix_term}" AND {search_field}:"{prefix.upper()}")'
 
+        if phrase:
+            return f'{search_field}:"{term}"'
+
         return f"{search_field}:{term}"
 
     def build_filter_clause(self, query: dict[str, str], is_child_search: bool) -> list[str]:
@@ -86,7 +89,7 @@ class QueryBuilder:
                 filters.append(self.create_clause(key, term, False, is_child_search))
         return filters
 
-    def build_child_query(self, child_query: dict[str, str], is_child_search: bool) -> str | None:
+    def build_child_query(self, child_query: dict[str, str], is_child_search: bool, keep_phrase: bool = False) -> str | None:
         """Return the child query fq."""
         # add filter clauses for child query items
         child_q = ""
@@ -94,11 +97,12 @@ class QueryBuilder:
             if not value:
                 continue
 
+            if keep_phrase:
+                child_q = self.join_clause(child_q, self.create_clause(key, value, True, is_child_search, True), "AND")
+                continue
+            
             terms = value.split()
-            if not child_q:
-                child_q = self.create_clause(key, terms[0], True, is_child_search)
-            else:
-                child_q += f" AND {self.create_clause(key, terms[0], True, is_child_search)}"
+            child_q = self.join_clause(child_q, self.create_clause(key, terms[0], True, is_child_search), "AND")
 
             for term in terms[1:]:
                 child_q += f" AND {self.create_clause(key, term, True, is_child_search)}"
