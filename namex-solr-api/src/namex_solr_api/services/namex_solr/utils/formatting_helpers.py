@@ -270,6 +270,14 @@ def apply_initials_group_exact_highlights(
     return rewritten
 
 
+def _initials_group_parts(terms: list[str]) -> tuple[list[str], list[str]]:
+    runs = initials_group_runs(terms)
+    rest = [token for token in terms if len(token) > 1]
+    if not runs or not rest:
+        return [], []
+    return runs, rest
+
+
 def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> list[dict]:
     """All maximal 2+ single-letter runs AND all length>1 terms.
 
@@ -279,9 +287,8 @@ def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> l
         boost = INITIALS_GROUP_BOOST_WEIGHT
     from namex_solr_api.services.namex_solr.doc_models import NameField
 
-    runs = initials_group_runs(terms)
-    rest = [token for token in terms if len(token) > 1]
-    if not runs or not rest:
+    runs, rest = _initials_group_parts(terms)
+    if not runs:
         return []
     return [
         {
@@ -289,6 +296,23 @@ def build_initials_group_boosts(terms: list[str], boost: str | None = None) -> l
             "values": [*runs, *rest],
             "boost": boost,
         }
+    ]
+
+
+def build_initials_exact_boosts(terms: list[str], boost: str | None = None) -> list[dict]:
+    if boost is None:
+        boost = INITIALS_GROUP_BOOST_WEIGHT
+    from namex_solr_api.services.namex_solr.doc_models import NameField
+
+    runs, _ = _initials_group_parts(terms)
+    field = NameField.NAME_Q_EXACT
+    return [
+        {
+            "field": field,
+            "term_clauses": [f"{field.value}:{run}"],
+            "boost": boost,
+        }
+        for run in runs
     ]
 
 

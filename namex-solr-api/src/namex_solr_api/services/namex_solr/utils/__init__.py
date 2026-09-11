@@ -22,6 +22,7 @@ from .formatting_helpers import (
     apply_initials_group_exact_highlights,
     apply_leading_wildcard_rank,
     build_distinctive_coverage_boosts,
+    build_initials_exact_boosts,
     build_initials_group_boosts,
     candidate_letter_tokens,
     conflict_match_prep_terms,
