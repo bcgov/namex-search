@@ -202,6 +202,19 @@ def _is_rank_slot(term: str) -> bool:
     return len(term) == _RANK_PREFIX_LEN and term.lower() not in SYNONYM_SKIP_WORDS
 
 
+def _query_initials_covered(query_value: str, name_tokens: list[str]) -> int:
+    terms = (query_value or "").split()
+    index = 0
+    while index < len(terms):
+        if run := _letter_run(terms, index):
+            if _initials_run_covered(run, name_tokens):
+                return 1
+            index += len(run)
+        else:
+            index += 1
+    return 0
+
+
 def _letter_run(terms: list[str], index: int) -> list[str] | None:
     term = terms[index]
     if not (len(term) == 1 and term.isalpha()):
@@ -426,7 +439,7 @@ def conflict_rank_key(  # noqa: PLR0913
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
     name_token_stems: dict[str, list[str]] | None = None,
-) -> tuple[int, int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int, int]:
     """Pin closer leftover after identity is present.
 
     identity_present: first coverage token is family or better (bc counts).
@@ -438,11 +451,12 @@ def conflict_rank_key(  # noqa: PLR0913
     terms = distinctive_coverage_terms(query_value)
     query_terms = {term.lower() for term in (query_value or "").split() if term}
     name_tokens = _usable_name_tokens(name, query_terms)
+    initials_exact = _query_initials_covered(query_value, name_tokens)
     _covered, strong = distinctive_cover_rank(
         query_value, name, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     )
     if not terms:
-        return 0, 0, 0, 0, 0, strong
+        return initials_exact, 0, 0, 0, 0, 0, strong
 
     first_cover = _token_cover(
         terms[0], name_tokens, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
@@ -490,6 +504,7 @@ def conflict_rank_key(  # noqa: PLR0913
     else:
         prefix_complete = 1
     return (
+        initials_exact,
         identity_present,
         leftover_exact,
         first_tier,
