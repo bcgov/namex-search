@@ -421,7 +421,7 @@ def nrs():
                         "value": query["value"],
                         PCField.CORP_NUM.value: query[PCField.CORP_NUM_Q.value],
                         PCField.NR_NUM.value: query[PCField.NR_NUM_Q.value],
-                        NameField.NAME.value: child_query[NameField.NAME_Q_EXACT_PHRASE.value]
+                        NameField.NAME.value: child_query[NameField.NAME_Q_SINGLE.value]
                     },
                     "rows": rows or solr.default_rows,
                     "start": start or solr.default_start,
