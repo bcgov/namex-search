@@ -229,7 +229,6 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 return resp
 
             highlight_raw = solr_highlighting.get(result[NameField.UNIQUE_KEY.value], {})
-            # print(result.get('name'), highlight_raw)
             exact_highlights = []
             stem_highlights = []
             phonetic_highlights = []
