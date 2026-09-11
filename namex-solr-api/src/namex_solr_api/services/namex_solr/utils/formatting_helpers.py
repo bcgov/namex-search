@@ -7,17 +7,14 @@ from flask import current_app
 from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
 from namex_solr_api.services.base_solr.utils.query_builder import SYNONYM_SKIP_WORDS
 
-# Punct/space between two single letters (H&H, H.H., H. & H.). Does not insert "and".
+# Single-letter pairs joined by punctuation or space.
 _INITIAL_PUNCT = re.compile(
     r"(?i)(?<![a-z])([a-z])(?:[\s]*[&./,!_\-'@+=]+[\s]*)+([a-z])\.?(?![a-z])"
 )
-# Pairwise loop cannot consume the last initial's period when a space (or end of
-# string) follows: "j. r. m. investments" → "j r m. investments".
+# Period after a single-letter initial.
 _DANGLING_INITIAL_DOT = re.compile(r"(?i)(?<![a-z])([a-z])\.(?![a-z])")
-# Same leftover when the period is glued to the next word: "j r m.investments".
+# Period between a single-letter initial and a following word.
 _INITIAL_DOT_WORD = re.compile(r"(?i)(?<![a-z])([a-z])\.([a-z]{2,})")
-# Pairwise loop only consumes letter-to-letter connectors. A leftover & after a
-# 2+ initials run ("J R M& INVESTMENTS", "J R M &") would otherwise become "and".
 _TRAILING_INITIAL_CONNECTOR = re.compile(
     r"(?i)(?<![a-z])((?:[a-z]\s+)+[a-z])(?:[\s]*[&./,!_\-'@+=]+[\s]*)+(?=[a-z]{2,}|\s*$)"
 )
@@ -52,10 +49,7 @@ def _glue_distinctive_letter_runs(text: str) -> str:
 
 
 def normalize_conflict_initials(query: str | None) -> str:
-    """Normalize glued/punctuated initials to the spaced form GCP AND-split already handles.
-
-    Conflict path only. Runs before prep_query_str / QueryBuilder whitespace split.
-    """
+    """Normalize glued and punctuated initials on the conflict path."""
     if not query:
         return ""
 
@@ -67,7 +61,6 @@ def normalize_conflict_initials(query: str | None) -> str:
 
     normalized = _DANGLING_INITIAL_DOT.sub(r"\1 ", normalized)
     normalized = _INITIAL_DOT_WORD.sub(r"\1 \2", normalized)
-    # Before 4+ glue so "D A V I D& COUNTRYMAN" can still become DAVID.
     normalized = _TRAILING_INITIAL_CONNECTOR.sub(r"\1 ", normalized)
 
     def split_glued_initials(match: re.Match) -> str:
