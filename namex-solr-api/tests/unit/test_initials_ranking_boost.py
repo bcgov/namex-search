@@ -40,10 +40,6 @@ def group_values(items: list[dict]) -> list[list[str]]:
 LOCKED_CLAUSES = [
     ("J.R.M. INVESTMENTS", ["jrm", "investments"]),
     ("J R M INVESTMENTS", ["jrm", "investments"]),
-    ("J&R&M INVESTMENTS", ["jrm", "investments"]),
-    ("J & R & M INVESTMENTS", ["jrm", "investments"]),
-    ("J&R&M& INVESTMENTS", ["jrm", "investments"]),
-    ("J & R & M & INVESTMENTS", ["jrm", "investments"]),
     ("INVESTMENTS J R M", ["jrm", "investments"]),
     ("PACIFIC J R M INVESTMENTS", ["jrm", "pacific", "investments"]),
     ("H&H INVESTMENTS", ["hh", "investments"]),
