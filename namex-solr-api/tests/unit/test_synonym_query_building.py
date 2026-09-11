@@ -1,5 +1,6 @@
 """Tests for stemmed-key synonym matching and the single-analyzer-call threading."""
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import Mock, patch
 
 from namex_solr_api.models import SolrSynonymList
@@ -138,3 +139,50 @@ class TestStemMapThreading:
         with patch.object(SolrSynonymList, "find_all_beginning_with_phrase", return_value=[]):
             build_namex_query_payload(params, solr, True, False)
         assert solr.analyze_field.call_count == 1
+
+
+class TestSurfaceStemBridging:
+    """Doc tokens are surfaces, families hold agro stems - token_stems bridges them."""
+
+    FAMILY: ClassVar[set[str]] = {"aesthet", "beauti", "cosmet"}
+
+    def test_highlight_kept_with_token_stems(self):
+        from namex_solr_api.services.namex_solr.utils import keep_family_synonym_highlights
+
+        kept = keep_family_synonym_highlights(
+            ["BEAUTY", "CALEZA", "INC"], self.FAMILY, None, {"beauty": ["beauti"]}
+        )
+        assert kept == ["BEAUTY"]
+
+    def test_highlight_dropped_without_token_stems_documents_the_gap(self):
+        # porter's y->i rewrite defeats the prefix fallback
+        from namex_solr_api.services.namex_solr.utils import keep_family_synonym_highlights
+
+        assert keep_family_synonym_highlights(["BEAUTY"], self.FAMILY) == []
+
+    def test_family_cover_with_token_stems(self):
+        from namex_solr_api.services.namex_solr.utils.conflict_bucket import cover_query_token
+
+        cover = cover_query_token(
+            "aesthetics",
+            ["CALEZA", "BEAUTY", "INC"],
+            family=self.FAMILY,
+            name_token_stems={"beauty": ["beauti"], "caleza": ["caleza"], "inc": ["inc"]},
+        )
+        assert cover == "family"
+
+    def test_rank_prefers_family_covered_doc(self):
+        from namex_solr_api.services.namex_solr.utils import rank_conflict_docs
+
+        docs = [
+            {"name": "CALEZA HOLDINGS INC"},
+            {"name": "CALEZA BEAUTY INC"},
+        ]
+        ranked = rank_conflict_docs(
+            docs,
+            "caleza aesthetics",
+            family_by_term={"aesthetics": self.FAMILY},
+            query_stems_by_term={"caleza": {"caleza"}, "aesthetics": {"aesthet"}},
+            name_token_stems={"beauty": ["beauti"], "caleza": ["caleza"], "holdings": ["hold"], "inc": ["inc"]},
+        )
+        assert ranked[0]["name"] == "CALEZA BEAUTY INC"

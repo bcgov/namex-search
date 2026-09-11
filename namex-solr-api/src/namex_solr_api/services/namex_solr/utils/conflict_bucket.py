@@ -178,9 +178,14 @@ def _tokens_share_stem(left: str, right: str) -> bool:
     return _light_stem(query) == _light_stem(name)
 
 
-def _stem_cover(query: str, name_tokens: list[str], query_stems: set[str] | None = None) -> bool:
+def _stem_cover(
+    query: str,
+    name_tokens: list[str],
+    query_stems: set[str] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
+) -> bool:
     stems = {stem.lower() for stem in (query_stems or set()) if stem}
-    if keep_family_synonym_highlights(name_tokens, {query.lower()} | stems, stems):
+    if keep_family_synonym_highlights(name_tokens, {query.lower()} | stems, stems, name_token_stems):
         return True
     for name_token in name_tokens:
         if _tokens_share_stem(query, name_token):
@@ -247,6 +252,7 @@ def cover_query_token(  # noqa: PLR0913
     family_stems: set[str] | None = None,
     query_stems: set[str] | None = None,
     sound_tokens: list[str] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> str | None:
     query = (query_token or "").strip()
     if not query:
@@ -261,9 +267,9 @@ def cover_query_token(  # noqa: PLR0913
             or _consecutive_concat_cover(query, name_tokens)
         ):
             cover = _COVER_EXACT
-        elif _stem_cover(query, name_tokens, query_stems):
+        elif _stem_cover(query, name_tokens, query_stems, name_token_stems):
             cover = _COVER_STEM
-        elif family and keep_family_synonym_highlights(name_tokens, family, family_stems):
+        elif family and keep_family_synonym_highlights(name_tokens, family, family_stems, name_token_stems):
             cover = _COVER_FAMILY
         elif any(_real_phonetic_match(name_token, query) for name_token in sound_tokens):
             cover = _COVER_PHONETIC
@@ -281,6 +287,7 @@ def _cover_for_run(  # noqa: PLR0913
     family_stems_by_term: dict[str, set[str]],
     query_stems_by_term: dict[str, set[str]],
     sound_tokens: list[str],
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> str | None:
     if _initials_run_covered(run, name_tokens):
         return _COVER_EXACT
@@ -293,16 +300,18 @@ def _cover_for_run(  # noqa: PLR0913
             _sets_for_term(family_stems_by_term, glued),
             _sets_for_term(query_stems_by_term, glued),
             sound_tokens,
+            name_token_stems,
         )
     return None
 
 
-def _iter_query_covers(
+def _iter_query_covers(  # noqa: PLR0913
     query_value: str,
     name: str,
     family_by_term: dict[str, set[str]] | None = None,
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ):
     terms = [term for term in (query_value or "").split() if term]
     if not terms:
@@ -339,6 +348,7 @@ def _iter_query_covers(
                 family_stems_by_term,
                 query_stems_by_term,
                 sound_tokens,
+                name_token_stems,
             )
         else:
             cover = cover_query_token(
@@ -348,6 +358,7 @@ def _iter_query_covers(
                 _sets_for_term(family_stems_by_term, term),
                 _sets_for_term(query_stems_by_term, term),
                 sound_tokens,
+                name_token_stems,
             )
         yield require_all, awaiting_distinctive, is_distinctive, counts_for_rank, cover
         if not require_all and awaiting_distinctive and is_distinctive and cover is not None:
@@ -355,30 +366,32 @@ def _iter_query_covers(
         index = consume_to
 
 
-def distinctive_cover_count(
+def distinctive_cover_count(  # noqa: PLR0913
     query_value: str,
     name: str,
     family_by_term: dict[str, set[str]] | None = None,
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> int:
     covered, _strong = distinctive_cover_rank(
-        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term
+        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     )
     return covered
 
 
-def distinctive_cover_rank(
+def distinctive_cover_rank(  # noqa: PLR0913
     query_value: str,
     name: str,
     family_by_term: dict[str, set[str]] | None = None,
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> tuple[int, int]:
     covered = 0
     strong = 0
     for _require_all, _awaiting, _is_distinctive, counts_for_rank, cover in _iter_query_covers(
-        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term
+        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     ):
         if counts_for_rank and cover is not None:
             covered += 1
@@ -387,12 +400,13 @@ def distinctive_cover_rank(
     return covered, strong
 
 
-def _token_cover(
+def _token_cover(  # noqa: PLR0913
     term: str,
     name_tokens: list[str],
     family_by_term: dict[str, set[str]] | None,
     family_stems_by_term: dict[str, set[str]] | None,
     query_stems_by_term: dict[str, set[str]] | None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> str | None:
     return cover_query_token(
         term,
@@ -401,15 +415,17 @@ def _token_cover(
         _sets_for_term(family_stems_by_term or {}, term),
         _sets_for_term(query_stems_by_term or {}, term),
         name_tokens,
+        name_token_stems,
     )
 
 
-def conflict_rank_key(
+def conflict_rank_key(  # noqa: PLR0913
     query_value: str,
     name: str,
     family_by_term: dict[str, set[str]] | None = None,
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> tuple[int, int, int, int, int, int]:
     """Pin closer leftover after identity is present.
 
@@ -423,13 +439,13 @@ def conflict_rank_key(
     query_terms = {term.lower() for term in (query_value or "").split() if term}
     name_tokens = _usable_name_tokens(name, query_terms)
     _covered, strong = distinctive_cover_rank(
-        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term
+        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     )
     if not terms:
         return 0, 0, 0, 0, 0, strong
 
     first_cover = _token_cover(
-        terms[0], name_tokens, family_by_term, family_stems_by_term, query_stems_by_term
+        terms[0], name_tokens, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     )
     if first_cover in _COVER_STRONG:
         first_tier = 2
@@ -449,6 +465,7 @@ def conflict_rank_key(
             family_by_term,
             family_stems_by_term,
             query_stems_by_term,
+            name_token_stems,
         )
         leftover_covered = int(leftover_cover is not None)
         leftover_exact = int(leftover_cover in _COVER_STRONG)
@@ -464,6 +481,7 @@ def conflict_rank_key(
                     family_by_term,
                     family_stems_by_term,
                     query_stems_by_term,
+                    name_token_stems,
                 )
                 in _COVER_STRONG
                 for term in prefix_span
@@ -481,12 +499,13 @@ def conflict_rank_key(
     )
 
 
-def rank_conflict_docs(
+def rank_conflict_docs(  # noqa: PLR0913
     docs: list[dict],
     query_value: str,
     family_by_term: dict[str, set[str]] | None = None,
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     return sorted(
         docs,
@@ -498,6 +517,7 @@ def rank_conflict_docs(
                 family_by_term,
                 family_stems_by_term,
                 query_stems_by_term,
+                name_token_stems,
             )
         ),
     )
@@ -508,12 +528,13 @@ def visible_conflict_bucket(bucket: str) -> str:
     return BUCKET_SYNONYM if bucket == BUCKET_DROP else bucket
 
 
-def classify_conflict_bucket(
+def classify_conflict_bucket(  # noqa: PLR0913
     query_value: str,
     name: str,
     family_by_term: dict[str, set[str]] | None = None,
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
 ) -> str:
     terms = [term for term in (query_value or "").split() if term]
     if not terms:
@@ -521,7 +542,7 @@ def classify_conflict_bucket(
 
     saw_phonetic = False
     for require_all, awaiting_distinctive, is_distinctive, _counts_for_rank, cover in _iter_query_covers(
-        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term
+        query_value, name, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     ):
         if cover == _COVER_PHONETIC and (require_all or (awaiting_distinctive and is_distinctive)):
             saw_phonetic = True

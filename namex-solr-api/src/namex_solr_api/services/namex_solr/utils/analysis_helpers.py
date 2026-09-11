@@ -76,7 +76,9 @@ def analyze_stemmed_agro_stem_map(solr, query_value: str) -> dict[str, str]:
     return stem_map
 
 
-def analyze_stemmed_agro_token_map(solr, tokens: list[str], *, chunk_size: int = _STEM_CHUNK_SIZE) -> dict[str, str]:
+def analyze_stemmed_agro_token_map(
+    solr, tokens: list[str], *, chunk_size: int = _STEM_CHUNK_SIZE, timeout: int = 30
+) -> dict[str, str]:
     """Return {token: agro stem} for the unique tokens, batched into few analyzer calls."""
     unique_tokens = []
     seen = set()
@@ -90,7 +92,7 @@ def analyze_stemmed_agro_token_map(solr, tokens: list[str], *, chunk_size: int =
     for chunk_start in range(0, len(unique_tokens), chunk_size):
         chunk = unique_tokens[chunk_start:chunk_start + chunk_size]
         stems = parse_stemmed_tokens(
-            solr.analyze_field(" ".join(chunk), STEMMED_AGRO_FIELD_TYPE, timeout=30, fail_soft=False)
+            solr.analyze_field(" ".join(chunk), STEMMED_AGRO_FIELD_TYPE, timeout=timeout, fail_soft=False)
         )
         if len(stems) == len(chunk):
             stem_map.update(zip(chunk, stems, strict=True))
@@ -99,10 +101,35 @@ def analyze_stemmed_agro_token_map(solr, tokens: list[str], *, chunk_size: int =
         # chunk one token at a time; an unmappable token stems to itself
         for token in chunk:
             token_stems = parse_stemmed_tokens(
-                solr.analyze_field(token, STEMMED_AGRO_FIELD_TYPE, timeout=30, fail_soft=False)
+                solr.analyze_field(token, STEMMED_AGRO_FIELD_TYPE, timeout=timeout, fail_soft=False)
             )
             stem_map[token] = token_stems[0] if len(token_stems) == 1 else token
     return stem_map
+
+
+def analyze_stemmed_agro_token_stems(solr, tokens: list[str]) -> dict[str, list[str]]:
+    """Return {token: [agro stem]} for doc-side surface tokens."""
+    unique = sorted({(token or "").lower().strip() for token in tokens} - {""})
+    resolved: dict[str, list[str]] = {}
+    missing: list[str] = []
+    for token in unique:
+        cached = None
+        with suppress(Exception):
+            cached = analysis_cache.get(f"agro-tok::{token}")
+        if cached:
+            resolved[token] = list(cached)
+        else:
+            missing.append(token)
+    if missing:
+        try:
+            stem_map = analyze_stemmed_agro_token_map(solr, missing, timeout=5)
+        except Exception:
+            return resolved
+        for token, stem in stem_map.items():
+            resolved[token] = [stem]
+            with suppress(Exception):
+                analysis_cache.set(f"agro-tok::{token}", [stem])
+    return resolved
 
 
 def stem_phrase(phrase: str, stem_map: dict[str, str]) -> str:

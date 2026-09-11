@@ -15,6 +15,7 @@ from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import (
     analyze_stemmed_agro_stem_map,
+    analyze_stemmed_agro_token_stems,
     apply_conflict_wildcard_boosts,
     apply_embedded_reserved_retrieve,
     apply_initials_group_exact_highlights,
@@ -60,7 +61,7 @@ def _conflict_solr_search(params: QueryParams, is_strict: bool, max_highlighted_
 @bp.post("/possible-conflict-names")
 @cross_origin(origins="*")
 @jwt.requires_auth
-def possible_conflict_names():  # noqa: PLR0915
+def possible_conflict_names():  # noqa: PLR0912, PLR0915
     """Return a list of possible conflict name results from solr."""
     try:
         # NOTE: request_ctx.current_user is set by jwt.requires_auth
@@ -204,7 +205,21 @@ def possible_conflict_names():  # noqa: PLR0915
             for part in families_by_term.values()
             for token in part
         }
-        for result in results.get("response", {}).get("docs") or []:
+        # doc names/highlights are surface forms while the family holds stems
+        # one analyzer call bridges them for highlight filtering and bucket/rank family coverage
+        result_docs = results.get("response", {}).get("docs") or []
+        doc_token_stems = {}
+        if synonym_family and result_docs:
+            doc_tokens = set()
+            for result in result_docs:
+                doc_tokens.update(
+                    candidate_synonym_highlight_tokens(
+                        solr_highlighting.get(result[NameField.UNIQUE_KEY.value], {}).get(NameField.NAME_Q_SYN.value, []) or [],
+                        result.get("name") or "",
+                    )
+                )
+            doc_token_stems = analyze_stemmed_agro_token_stems(solr, sorted(doc_tokens))
+        for result in result_docs:
             def split_highlights(highlights: list[str]):
                 """Split list of strings into list of single terms, removing HTML tags"""
                 resp = []
@@ -214,6 +229,7 @@ def possible_conflict_names():  # noqa: PLR0915
                 return resp
 
             highlight_raw = solr_highlighting.get(result[NameField.UNIQUE_KEY.value], {})
+            # print(result.get('name'), highlight_raw)
             exact_highlights = []
             stem_highlights = []
             phonetic_highlights = []
@@ -243,6 +259,8 @@ def possible_conflict_names():  # noqa: PLR0915
                 for token in keep_family_synonym_highlights(
                     synonym_candidates,
                     synonym_family,
+                    None,
+                    doc_token_stems,
                 )
                 if token not in other_highlights
             ]
@@ -253,6 +271,7 @@ def possible_conflict_names():  # noqa: PLR0915
                     families_by_term,
                     None,
                     query_stems_by_term,
+                    doc_token_stems,
                 )
             )
             docs.append({
@@ -272,6 +291,7 @@ def possible_conflict_names():  # noqa: PLR0915
             families_by_term,
             None,
             query_stems_by_term,
+            doc_token_stems,
         )
         if wildcard.leading and not wildcard.trailing and start == 0:
             docs = apply_leading_wildcard_rank(docs, value)

@@ -8,6 +8,7 @@ from namex_solr_api.services.namex_solr.utils.analysis_helpers import (
     STEMMED_AGRO_FIELD_TYPE,
     analyze_stemmed_agro_stem_map,
     analyze_stemmed_agro_token_map,
+    analyze_stemmed_agro_token_stems,
     build_stem_map,
     parse_stemmed_tokens,
     stem_phrase,
@@ -164,3 +165,17 @@ class TestStemPhrase:
 
     def test_unknown_tokens_kept(self):
         assert stem_phrase("kial workers", {"workers": "worker"}) == "kial worker"
+
+
+class TestAnalyzeStemmedAgroTokenStems:
+    def test_bridges_surface_to_stem(self):
+        solr = Mock()
+        solr.analyze_field.return_value = _analysis_response(["beauti", "caleza", "inc"])
+        stems = analyze_stemmed_agro_token_stems(solr, ["BEAUTY", "CALEZA", "INC"])
+        assert stems == {"beauty": ["beauti"], "caleza": ["caleza"], "inc": ["inc"]}
+        assert solr.analyze_field.call_count == 1
+
+    def test_soft_fails_to_empty(self):
+        solr = Mock()
+        solr.analyze_field.side_effect = RuntimeError("solr down")
+        assert analyze_stemmed_agro_token_stems(solr, ["beauty"]) == {}
