@@ -1,5 +1,14 @@
 """This module manages util methods for the NameX solr service."""
-from .analysis_helpers import analyze_stemmed_agro_tokens, parse_stemmed_tokens
+from .analysis_helpers import (
+    analyze_stemmed_agro_stem_map,
+    analyze_stemmed_agro_token_map,
+    analyze_stemmed_agro_token_stems,
+    analyze_stemmed_agro_tokens,
+    build_stem_map,
+    parse_stemmed_tokens,
+    stem_phrase,
+    stem_synonym_payload,
+)
 from .conflict_bucket import (
     classify_conflict_bucket,
     cover_query_token,
@@ -40,10 +49,8 @@ from .namex_search_helper import (
 from .phonetic import keep_phonetic_match
 from .synonym_helpers import (
     candidate_synonym_highlight_tokens,
-    family_synonym_highlights,
     get_synonyms,
     keep_family_synonym_highlights,
     name_surface_tokens,
     retrieve_synonym_families_by_term,
-    retrieve_synonym_family_tokens,
 )

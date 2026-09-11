@@ -154,8 +154,12 @@ class Solr:
             current_app.logger.debug(msg)
             raise SolrException(error=msg, status_code=status_code) from err
 
-    def analyze_field(self, field_value: str, field_type: str) -> dict:
-        """Return Solr analysis for a field type. Follower, 5s; empty dict if analysis is down."""
+    def analyze_field(self, field_value: str, field_type: str, *, timeout: int = 5, fail_soft: bool = True) -> dict:
+        """Return Solr analysis for a field type (follower).
+
+        - fail_soft returns an empty dict when analysis is down (search callers fall back to raw terms)
+        - fail_soft=False re-raises for write paths that must never persist unstemmed data.
+        """
         try:
             response = self.call_solr(
                 "GET",
@@ -166,10 +170,12 @@ class Solr:
                     "analysis.fieldtype": field_type,
                 },
                 leader=False,
-                timeout=5,
+                timeout=timeout,
             )
             return response.json()
         except Exception:
+            if not fail_soft:
+                raise
             current_app.logger.warning("Solr analysis unavailable; synonym stem fallback skipped.")
             return {}
 

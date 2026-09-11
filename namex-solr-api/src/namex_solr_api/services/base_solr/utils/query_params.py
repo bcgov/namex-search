@@ -22,8 +22,11 @@ class QueryParams:  # pylint: disable=too-few-public-methods
     query_synonym_fields: dict[BaseEnum, str]
     full_query_boosts: list[dict[str, BaseEnum | str]]
     exclude_sub_types: list[str]
-    expand_leftover_raw_synonyms: bool = False
     # Outer-wildcard tokens scored as presence (Solr ^=). Empty for /nrs
     # and normal conflict search so BM25 defaults stay unchanged.
     constant_score_terms: list[str] = field(default_factory=list)
     override_query: str | None = None
+    # Pre-computed {term: agro stem} for query["value"]. When set, payload
+    # builders derive per-term stems from it (works for lane term subsets too)
+    # instead of calling Solr analysis per payload.
+    stemmed_terms_map: dict[str, str] | None = None

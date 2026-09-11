@@ -49,6 +49,7 @@ from namex_solr_api.models import db
 from namex_solr_api.resources import internal_bp, ops_bp, v1_bp
 from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.auth import auth_cache
+from namex_solr_api.services.namex_solr.utils.analysis_helpers import analysis_cache
 from namex_solr_api.version import get_run_version
 from structured_logging import StructuredLogging
 
@@ -77,6 +78,7 @@ def create_app(environment: str = os.getenv("DEPLOYMENT_ENV", "production"), **k
         app.register_blueprint(v1_bp)
         setup_jwt_manager(app, jwt)
         auth_cache.init_app(app)
+        analysis_cache.init_app(app)
 
     @app.route("/")
     def be_nice_swagger_redirect():

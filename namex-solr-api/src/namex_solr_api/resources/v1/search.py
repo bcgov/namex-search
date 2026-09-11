@@ -14,7 +14,8 @@ from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import (
-    analyze_stemmed_agro_tokens,
+    analyze_stemmed_agro_stem_map,
+    analyze_stemmed_agro_token_stems,
     apply_conflict_wildcard_boosts,
     apply_embedded_reserved_retrieve,
     apply_initials_group_exact_highlights,
@@ -136,6 +137,9 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             constant_score_terms,
         )
 
+        # the Solr analyzer call for stems of all the terms in the query
+        stems_by_term = analyze_stemmed_agro_stem_map(solr, query["value"])
+
         params = QueryParams(
             query=query,
             rows=rows,
@@ -171,41 +175,51 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             # TODO: add this as LD flag ? names ticket: #32885
             exclude_sub_types=["DBA", "FR", "GP", "LL", "LP"],
             constant_score_terms=constant_score_terms,
+            stemmed_terms_map=stems_by_term,
         )
 
         params = apply_embedded_reserved_retrieve(params, solr, strict, start)
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
         docs = []
         query_value = params.query.get("value", "")
-        query_stems = analyze_stemmed_agro_tokens(solr, query_value)
+        query_terms_list = query_value.split()
+        query_stems = (
+            [stems_by_term.get(term, term) for term in query_terms_list]
+            if stems_by_term
+            else []
+        )
         families_by_term = retrieve_synonym_families_by_term(
             query_value,
             solr.query_builder,
             NameField.NAME_Q_SYN,
             query_stems,
         )
-        query_terms_list = query_value.split()
-        query_stems_by_term = {}
-        if query_stems and len(query_stems) == len(query_terms_list):
-            query_stems_by_term = {
-                term: {query_stems[index]}
-                for index, term in enumerate(query_terms_list)
-                if query_stems[index]
-            }
+        query_stems_by_term = {
+            term: {stems_by_term[term]}
+            for term in query_terms_list
+            if stems_by_term.get(term)
+        }
+        # DB synonyms are stored as agro stems, so the family set is the stem set
         synonym_family = {
             token
             for part in families_by_term.values()
             for token in part
         }
-        synonym_family_stems = {
-            stem.lower()
-            for stem in (
-                analyze_stemmed_agro_tokens(solr, " ".join(sorted(synonym_family)))
-                if synonym_family
-                else []
-            )
-        }
-        for result in results.get("response", {}).get("docs") or []:
+        # doc names/highlights are surface forms while the family holds stems
+        # one analyzer call bridges them for highlight filtering and bucket/rank family coverage
+        result_docs = results.get("response", {}).get("docs") or []
+        doc_token_stems = {}
+        if synonym_family and result_docs:
+            doc_tokens = set()
+            for result in result_docs:
+                doc_tokens.update(
+                    candidate_synonym_highlight_tokens(
+                        solr_highlighting.get(result[NameField.UNIQUE_KEY.value], {}).get(NameField.NAME_Q_SYN.value, []) or [],
+                        result.get("name") or "",
+                    )
+                )
+            doc_token_stems = analyze_stemmed_agro_token_stems(solr, sorted(doc_tokens))
+        for result in result_docs:
             def split_highlights(highlights: list[str]):
                 """Split list of strings into list of single terms, removing HTML tags"""
                 resp = []
@@ -244,7 +258,8 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 for token in keep_family_synonym_highlights(
                     synonym_candidates,
                     synonym_family,
-                    synonym_family_stems,
+                    None,
+                    doc_token_stems,
                 )
                 if token not in other_highlights
             ]
@@ -255,6 +270,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     families_by_term,
                     None,
                     query_stems_by_term,
+                    doc_token_stems,
                 )
             )
             docs.append({
@@ -274,6 +290,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             families_by_term,
             None,
             query_stems_by_term,
+            doc_token_stems,
         )
         if wildcard.leading and not wildcard.trailing and start == 0:
             docs = apply_leading_wildcard_rank(docs, value)
