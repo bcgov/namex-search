@@ -15,6 +15,8 @@ ARTIFACT_REGISTRY_PROJECT="c4hnrd-tools"
 OC_NAMESPACE="cbaab0-${ENV}"
 IMPORTER_SECRET="namex-solr-importer-${ENV}-secret"
 
+SCHEDULERS_PAUSED=0
+
 LEADER_BACKEND="namex-solr-leader-backend"
 FOLLOWER_BACKEND="namex-solr-follower-backend"
 
@@ -343,6 +345,40 @@ reset_reindex_flag() {
         -p '{"stringData":{"REINDEX_CORE":"False"}}' 2>/dev/null || true
 }
 
+pause_solr_schedulers() {
+    local job
+    log "Pausing solr sync schedulers…"
+    for job in "namex-solr-api-sync-${ENV}" "namex-solr-api-heartbeat-${ENV}"; do
+        if gcloud scheduler jobs describe "${job}" \
+            --location="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+            log "Pausing scheduler job ${job}…"
+            gcloud scheduler jobs pause "${job}" \
+                --location="${REGION}" --project="${PROJECT_ID}" >/dev/null
+        fi
+    done
+    SCHEDULERS_PAUSED=1
+}
+
+resume_solr_schedulers() {
+    local job
+    [[ "${SCHEDULERS_PAUSED}" -eq 1 ]] || return 0
+    log "Resuming solr sync schedulers…"
+    for job in "namex-solr-api-sync-${ENV}" "namex-solr-api-heartbeat-${ENV}"; do
+        if gcloud scheduler jobs describe "${job}" \
+            --location="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+            log "Resuming scheduler job ${job}…"
+            gcloud scheduler jobs resume "${job}" \
+                --location="${REGION}" --project="${PROJECT_ID}" >/dev/null
+        fi
+    done
+    SCHEDULERS_PAUSED=0
+}
+
+cleanup_on_exit() {
+    reset_reindex_flag
+    resume_solr_schedulers
+}
+
 ########################################
 # BUILD DOCKER IMAGES (DEV ONLY)
 ########################################
@@ -484,8 +520,10 @@ deploy_instances() {
             --project "${PROJECT_ID}" 2>/dev/null || true
     fi
 
-    # Trap ensures REINDEX_CORE resets even on failure (idempotent)
-    trap reset_reindex_flag EXIT
+    # Trap ensures REINDEX_CORE resets and schedulers resume even on failure (idempotent)
+    trap cleanup_on_exit EXIT
+
+    pause_solr_schedulers
 
     log "Enabling REINDEX_CORE in secret…"
     oc -n "${OC_NAMESPACE}" patch secret "${IMPORTER_SECRET}" \
@@ -538,6 +576,7 @@ deploy_instances() {
         exit 1
     fi
     log "New leader has ${IMPORTED_COUNT} documents."
+    resume_solr_schedulers
 
     ########################################
     # DEV ENV → LEADER ONLY
