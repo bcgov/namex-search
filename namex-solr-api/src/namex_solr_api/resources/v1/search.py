@@ -22,6 +22,7 @@ from namex_solr_api.services.namex_solr.utils import (
     apply_leading_wildcard_rank,
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
+    hyphen_glued_tokens,
     keep_family_synonym_highlights,
     mark_wildcard_constant_score_boosts,
     namex_search,
@@ -182,6 +183,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
         docs = []
         query_value = params.query.get("value", "")
+        glued_tokens = hyphen_glued_tokens(value)
         query_terms_list = query_value.split()
         query_stems = (
             [stems_by_term.get(term, term) for term in query_terms_list]
@@ -271,6 +273,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     None,
                     query_stems_by_term,
                     doc_token_stems,
+                    glued_tokens,
                 )
             )
             docs.append({
@@ -291,6 +294,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             None,
             query_stems_by_term,
             doc_token_stems,
+            glued_tokens,
         )
         if wildcard.leading and not wildcard.trailing and start == 0:
             docs = apply_leading_wildcard_rank(docs, value)

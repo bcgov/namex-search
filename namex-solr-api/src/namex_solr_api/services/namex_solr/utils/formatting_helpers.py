@@ -157,6 +157,7 @@ PREFIX_LANE_ROWS = 80
 GLUED_FIRST_MIN_LEN = 6
 CONCAT_RETRIEVE_BOOST = "80"
 EXACT_CONCAT_MAX_HITS = 40
+_HYPHEN_CLUSTER = re.compile(r"(?i)[a-z]{2,}(?:\s*-\s*[a-z]{2,})+")
 
 
 def is_coverage_prefix_term(token: str) -> bool:
@@ -328,6 +329,27 @@ def _distinctive_term_clause(term: str) -> str:
     if fuzzy := QueryBuilder.get_fuzzy_str(term, 1, 2):
         parts.append(f"{NameField.NAME_Q.value}:{term}{fuzzy}")
     return f"({' OR '.join(parts)})"
+
+
+def hyphen_glued_tokens(query_value: str) -> list[str]:
+    glued: list[str] = []
+    seen: set[str] = set()
+    for cluster in _HYPHEN_CLUSTER.findall(query_value or ""):
+        token = re.sub(r"[\s-]+", "", cluster).lower()
+        if len(token) >= GLUED_FIRST_MIN_LEN and token not in seen:
+            seen.add(token)
+            glued.append(token)
+    return glued
+
+
+def build_hyphen_glued_boosts(query_value: str) -> list[dict]:
+    return [
+        {
+            "term_clauses": [_distinctive_term_clause(token)],
+            "boost": DISTINCTIVE_COVERAGE_BOOST_WEIGHT,
+        }
+        for token in hyphen_glued_tokens(query_value)
+    ]
 
 
 def distinctive_coverage_terms(query_value: str) -> list[str]:

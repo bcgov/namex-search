@@ -23,6 +23,20 @@ _COVER_FAMILY = "family"
 _COVER_PHONETIC = "phonetic"
 _COVER_FUZZY = "fuzzy"
 _COVER_STRONG = frozenset({_COVER_EXACT, _COVER_STEM})
+_COVER_RANK = {
+    _COVER_EXACT: 4,
+    _COVER_STEM: 3,
+    _COVER_FAMILY: 2,
+    _COVER_FUZZY: 1,
+    _COVER_PHONETIC: 1,
+}
+_COVER_TIER = {
+    _COVER_EXACT: 2,
+    _COVER_STEM: 2,
+    _COVER_FAMILY: 1,
+    _COVER_FUZZY: 1,
+    _COVER_PHONETIC: 0,
+}
 _MIN_STEM = 4
 _MIN_DISTINCTIVE = 4
 _RANK_PREFIX_LEN = 3
@@ -432,6 +446,19 @@ def _token_cover(  # noqa: PLR0913
     )
 
 
+def _hyphen_glued_cover(
+    glued_tokens: list[str] | None,
+    name_tokens: list[str],
+    *args,
+) -> str | None:
+    best = None
+    for token in glued_tokens or ():
+        cover = _token_cover(token, name_tokens, *args)
+        if cover and (best is None or _COVER_RANK[cover] > _COVER_RANK[best]):
+            best = cover
+    return best
+
+
 def conflict_rank_key(  # noqa: PLR0913
     query_value: str,
     name: str,
@@ -439,6 +466,7 @@ def conflict_rank_key(  # noqa: PLR0913
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
     name_token_stems: dict[str, list[str]] | None = None,
+    glued_tokens: list[str] | None = None,
 ) -> tuple[int, int, int, int, int, int, int]:
     """Pin closer leftover after identity is present.
 
@@ -455,54 +483,64 @@ def conflict_rank_key(  # noqa: PLR0913
     _covered, strong = distinctive_cover_rank(
         query_value, name, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     )
-    if not terms:
-        return initials_exact, 0, 0, 0, 0, 0, strong
-
-    first_cover = _token_cover(
-        terms[0], name_tokens, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
-    )
-    if first_cover in _COVER_STRONG:
-        first_tier = 2
-    elif first_cover in {_COVER_FAMILY, _COVER_FUZZY}:
-        first_tier = 1
-    else:
-        first_tier = 0
-    identity_present = int(first_tier > 0)
-
-    leftover_exact = 0
-    leftover_covered = 0
-    prefix_span = terms[:-1]
-    if len(terms) >= 2:  # noqa: PLR2004
-        leftover_cover = _token_cover(
-            terms[-1],
-            name_tokens,
-            family_by_term,
-            family_stems_by_term,
-            query_stems_by_term,
-            name_token_stems,
+    leftover_covered = leftover_exact = identity_present = first_tier = prefix_complete = 0
+    if terms:
+        first_cover = _token_cover(
+            terms[0], name_tokens, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
         )
-        leftover_covered = int(leftover_cover is not None)
-        leftover_exact = int(leftover_cover in _COVER_STRONG)
-    else:
-        prefix_span = []
-
-    if prefix_span:
-        prefix_complete = int(
-            all(
-                _token_cover(
-                    term,
-                    name_tokens,
-                    family_by_term,
-                    family_stems_by_term,
-                    query_stems_by_term,
-                    name_token_stems,
-                )
-                in _COVER_STRONG
-                for term in prefix_span
+        if first_cover in _COVER_STRONG:
+            first_tier = 2
+        elif first_cover in {_COVER_FAMILY, _COVER_FUZZY}:
+            first_tier = 1
+        else:
+            first_tier = 0
+        identity_present = int(first_tier > 0)
+        prefix_span = terms[:-1]
+        if len(terms) >= 2:  # noqa: PLR2004
+            leftover_cover = _token_cover(
+                terms[-1],
+                name_tokens,
+                family_by_term,
+                family_stems_by_term,
+                query_stems_by_term,
+                name_token_stems,
             )
-        )
-    else:
-        prefix_complete = 1
+            leftover_covered = int(leftover_cover is not None)
+            leftover_exact = int(leftover_cover in _COVER_STRONG)
+        else:
+            prefix_span = []
+        if prefix_span:
+            prefix_complete = int(
+                all(
+                    _token_cover(
+                        term,
+                        name_tokens,
+                        family_by_term,
+                        family_stems_by_term,
+                        query_stems_by_term,
+                        name_token_stems,
+                    )
+                    in _COVER_STRONG
+                    for term in prefix_span
+                )
+            )
+        else:
+            prefix_complete = 1
+    glued_cover = _hyphen_glued_cover(
+        glued_tokens,
+        name_tokens,
+        family_by_term,
+        family_stems_by_term,
+        query_stems_by_term,
+        name_token_stems,
+    )
+    if glued_cover:
+        leftover_covered = 1
+        leftover_exact = max(leftover_exact, int(glued_cover in _COVER_STRONG))
+        identity_present = 1
+        first_tier = max(first_tier, _COVER_TIER[glued_cover])
+        if not terms:
+            prefix_complete = 1
     return (
         initials_exact,
         identity_present,
@@ -521,6 +559,7 @@ def rank_conflict_docs(  # noqa: PLR0913
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
     name_token_stems: dict[str, list[str]] | None = None,
+    glued_tokens: list[str] | None = None,
 ) -> list[dict]:
     return sorted(
         docs,
@@ -533,6 +572,7 @@ def rank_conflict_docs(  # noqa: PLR0913
                 family_stems_by_term,
                 query_stems_by_term,
                 name_token_stems,
+                glued_tokens,
             )
         ),
     )
@@ -550,12 +590,14 @@ def classify_conflict_bucket(  # noqa: PLR0913
     family_stems_by_term: dict[str, set[str]] | None = None,
     query_stems_by_term: dict[str, set[str]] | None = None,
     name_token_stems: dict[str, list[str]] | None = None,
+    glued_tokens: list[str] | None = None,
 ) -> str:
     terms = [term for term in (query_value or "").split() if term]
     if not terms:
         return BUCKET_SYNONYM
 
     saw_phonetic = False
+    dropped = False
     for require_all, awaiting_distinctive, is_distinctive, _counts_for_rank, cover in _iter_query_covers(
         query_value, name, family_by_term, family_stems_by_term, query_stems_by_term, name_token_stems
     ):
@@ -563,7 +605,21 @@ def classify_conflict_bucket(  # noqa: PLR0913
             saw_phonetic = True
 
         if require_all and cover is None:
-            return BUCKET_DROP
+            dropped = True
+            break
         if awaiting_distinctive and is_distinctive and cover is None:
-            return BUCKET_DROP
+            dropped = True
+            break
+    glued_cover = _hyphen_glued_cover(
+        glued_tokens,
+        _usable_name_tokens(name, {term.lower() for term in terms}),
+        family_by_term,
+        family_stems_by_term,
+        query_stems_by_term,
+        name_token_stems,
+    )
+    if glued_cover:
+        return BUCKET_PHONETIC if glued_cover == _COVER_PHONETIC else BUCKET_SYNONYM
+    if dropped:
+        return BUCKET_DROP
     return BUCKET_PHONETIC if saw_phonetic else BUCKET_SYNONYM
