@@ -18,6 +18,16 @@ from flask import current_app, jsonify
 
 from .exceptions import BaseException
 
+QUERY_TOO_COMPLEX = "QUERY_TOO_COMPLEX"
+QUERY_TOO_COMPLEX_MESSAGE = (
+    "This name is too complex for conflict search. Remove a word and try again."
+)
+
+
+def is_query_too_complex(error: object) -> bool:
+    text = str(error or "").lower()
+    return "toomanyclauses" in text or "maxclausecount" in text
+
 
 def bad_request_response(message: str, errors: list[dict[str, str]] | None = None):
     """Build generic bad request response."""
@@ -28,6 +38,12 @@ def exception_response(exception: BaseException):
     """Build exception error response."""
     details = repr(exception)
     current_app.logger.error(details)
+    error_text = getattr(exception, "error", None) or details
+    if is_query_too_complex(error_text):
+        return jsonify({
+            "code": QUERY_TOO_COMPLEX,
+            "message": QUERY_TOO_COMPLEX_MESSAGE,
+        }), HTTPStatus.UNPROCESSABLE_ENTITY
     try:
         message = exception.message or "Error processing request."
         status_code = exception.status_code or HTTPStatus.INTERNAL_SERVER_ERROR
