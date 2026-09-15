@@ -27,6 +27,7 @@ from .formatting_helpers import (
     candidate_letter_tokens,
     conflict_match_prep_terms,
     distinctive_coverage_terms,
+    hyphen_glued_tokens,
     initials_group_runs,
     mark_wildcard_constant_score_boosts,
     normalize_conflict_initials,

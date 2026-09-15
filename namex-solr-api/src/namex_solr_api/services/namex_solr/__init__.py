@@ -110,6 +110,7 @@ class NamexSolr(Solr):
         """
         from namex_solr_api.services.namex_solr.utils.formatting_helpers import (
             build_distinctive_coverage_boosts,
+            build_hyphen_glued_boosts,
             build_initials_exact_boosts,
             build_initials_group_boosts,
             conflict_match_prep_terms,
@@ -170,5 +171,6 @@ class NamexSolr(Solr):
         match_terms = conflict_match_prep_terms(query_value)
         full_query_boosts += build_initials_group_boosts(match_terms)
         full_query_boosts += build_initials_exact_boosts(match_terms)
+        full_query_boosts += build_hyphen_glued_boosts(query_value)
         full_query_boosts += build_distinctive_coverage_boosts(match_terms)
         return full_query_boosts
