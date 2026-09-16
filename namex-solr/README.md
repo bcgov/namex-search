@@ -11,7 +11,7 @@ BC Registries NameX Solr
 
 1. Pull the base solr docker image
 
-- `docker pull solr:9.8.1`
+- `docker pull solr:9.10.1`
 
 2. Run your solr containers
 
