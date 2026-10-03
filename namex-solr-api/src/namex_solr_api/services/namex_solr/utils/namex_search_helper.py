@@ -3,17 +3,22 @@ import re
 from dataclasses import replace
 
 from namex_solr_api.services.base_solr.utils import QueryParams
+from namex_solr_api.services.base_solr.utils.query_builder import QueryBuilder
 from namex_solr_api.services.namex_solr import NamexSolr
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 
 from .add_category_filters import add_category_filters
 from .analysis_helpers import analyze_stemmed_agro_tokens
 from .formatting_helpers import (
+    identity_term_groups,
     reserved_coverage_params,
     reserved_glued_concat_query,
     reserved_prefix_params,
     should_run_reserved_coverage,
 )
+
+IDENTITY_DESCRIPTIVE_BOOST = 10_000
+IDENTITY_FULL_BOOST = 1_000_000
 
 
 def format_full_query_boost(info: dict) -> str:
@@ -92,6 +97,98 @@ def embed_reserved_retrieve_query(params: QueryParams, solr: NamexSolr, is_stric
     if concat_query := reserved_glued_concat_query(params.query.get("value", ""), solr=solr):
         reserved.append(concat_query)
     return join_embedded_conflict_query(query_with_full_boosts(params, solr, True, False), reserved)
+
+
+def _name_splits(word: str) -> list[tuple[str, str]]:
+    if len(word) < 6:  # noqa: PLR2004
+        return []
+    return [(word[:index], word[index:]) for index in range(3, len(word) - 2)]
+
+
+def build_identity_descriptive_query(
+    solr: NamexSolr,
+    params: QueryParams,
+    distinctive: list[str],
+    descriptive: list[str],
+) -> str | None:
+    identity_groups = identity_term_groups(distinctive)
+    if not identity_groups:
+        return None
+    builder = solr.query_builder
+    stems_by_term = params.stemmed_terms_map or {}
+    constant = frozenset(params.constant_score_terms or [])
+    synonym_info: dict = {}
+
+    def clauses(groups: list[list[str]], with_synonym: bool) -> list[str]:
+        words = [group[0] for group in groups if len(group) == 1]
+        stems = [stems_by_term.get(term, term) for term in words]
+        built = []
+        word_index = 0
+        for group in groups:
+            if len(group) >= 2:  # noqa: PLR2004
+                glued = "".join(group)
+                built.append(f"{NameField.NAME_Q_EXACT.value}:{glued} OR {NameField.NAME_Q.value}:{glued}")
+                continue
+            clause = builder.build_term_clause(
+                group[0],
+                params.query_fields,
+                params.query_boost_fields,
+                params.query_fuzzy_fields,
+                True,
+                constant,
+            )
+            if with_synonym:
+                clause = builder.build_term_synonym_clauses(
+                    clause,
+                    words,
+                    word_index,
+                    synonym_info,
+                    params.query_synonym_fields,
+                    True,
+                    params.query_boost_fields,
+                    stems,
+                    True,
+                    constant,
+                )
+            built.append(clause)
+            word_index += 1
+        return built
+
+    identity_clauses = clauses(identity_groups, False)
+    if identity_groups and len(identity_groups[0]) == 1:
+        term = identity_groups[0][0]
+        lead = "".join(ch for ch in term.upper() if ch.isalnum())
+        broad = identity_clauses[0]
+        if lead:
+            exact = f"name:{lead}* AND ({broad})"
+            whole = f"name:{lead}\\ *"
+            fuzzy = QueryBuilder.get_fuzzy_str(term, 1, 2)
+            pieces = [f"(({whole})^{IDENTITY_FULL_BOOST})", f"({exact})"]
+            if fuzzy:
+                pieces.append(f"({NameField.NAME_Q.value}:{term}{fuzzy})")
+            pieces.extend(
+                f"((name:{left}\\ {right}*)^{IDENTITY_FULL_BOOST})" for left, right in _name_splits(lead)
+            )
+            identity_clauses[0] = " OR ".join(pieces)
+    first = f"({identity_clauses[0]})" if identity_clauses else ""
+    later = " AND ".join(f"({clause})" for clause in identity_clauses[1:] if clause)
+    identity = f"{first} AND {later}" if later else first
+    if not identity:
+        return None
+    described_clauses = [clause for clause in clauses(identity_term_groups(descriptive), True) if clause]
+    described = " OR ".join(f"({clause})" for clause in described_clauses)
+    if len(described_clauses) > 1:
+        described = f"({described})"
+    if not later:
+        if not described:
+            return f"({identity})"
+        return f"({identity}) OR (({identity} AND {described})^{IDENTITY_DESCRIPTIVE_BOOST})"
+    full_desc = IDENTITY_FULL_BOOST * IDENTITY_DESCRIPTIVE_BOOST
+    parts = [f"({first})", f"(({first} AND {later})^{IDENTITY_FULL_BOOST})"]
+    if described:
+        parts.append(f"(({first} AND {described})^{IDENTITY_DESCRIPTIVE_BOOST})")
+        parts.append(f"(({first} AND {later} AND {described})^{full_desc})")
+    return " OR ".join(parts)
 
 
 def apply_embedded_reserved_retrieve(params: QueryParams, solr: NamexSolr, is_strict: bool, start: int) -> QueryParams:

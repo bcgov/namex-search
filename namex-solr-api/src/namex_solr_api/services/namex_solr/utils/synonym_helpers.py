@@ -5,7 +5,6 @@ from namex_solr_api.models import SolrSynonymList
 from namex_solr_api.services.base_solr.utils.query_builder import SYNONYM_SKIP_WORDS
 
 _NAME_SURFACE_TOKEN = re.compile(r"[A-Za-z0-9']+")
-_MIN_STEM_PREFIX = 4
 
 
 def _get_synonyms(synonym_type: SolrSynonymList.Type) -> dict[str, list[str]]:
@@ -25,15 +24,22 @@ def retrieve_synonym_families_by_term(
     query_builder,
     synonym_field,
     stemmed_terms: list[str] | None = None,
+    browse_families: dict[str, list[str]] | None = None,
 ) -> dict[str, set[str]]:
     terms = (query_value or "").split()
     if not terms:
         return {}
     stemmed_terms = stemmed_terms or terms
+    browse = None if browse_families is None else {key.lower(): values for key, values in browse_families.items()}
     synonym_type = query_builder.synonym_field_map[synonym_field]
     families: dict[str, set[str]] = {}
     for index, term in enumerate(terms):
         allowed: set[str] = set()
+        if browse is not None:
+            for member in browse.get(term.lower(), []):
+                _add_family_surfaces(allowed, member)
+            families[term] = allowed
+            continue
         key_terms = query_builder.find_synonym_terms(
             term, index, terms, synonym_field, stemmed_terms
         )
@@ -52,9 +58,6 @@ def _add_family_surfaces(allowed: set[str], text: str) -> None:
         return
     if lower not in SYNONYM_SKIP_WORDS:
         allowed.add(lower)
-    allowed.update(
-        part for part in lower.split() if part and part not in SYNONYM_SKIP_WORDS
-    )
 
 
 def name_surface_tokens(name: str) -> list[str]:
@@ -70,6 +73,15 @@ def candidate_synonym_highlight_tokens(solr_tokens: list[str], name: str) -> lis
                 seen.add(part)
                 candidates.append(part)
     return candidates
+
+
+def _analyzed_stem_in_family(stem: str, family: set[str], stems: set[str]) -> bool:
+    if stem in family or stem in stems:
+        return True
+    if len(stem) > 1 and stem.endswith("e"):
+        base = stem[:-1]
+        return base in family or base in stems
+    return False
 
 
 def keep_family_synonym_highlights(
@@ -95,22 +107,50 @@ def keep_family_synonym_highlights(
             kept.append(upper)
             continue
         analyzed = [stem.lower() for stem in token_stems.get(lower, [])]
-        if any(stem in family or stem in stems for stem in analyzed):
-            seen.add(upper)
-            kept.append(upper)
-            continue
-        if _stem_prefix_in_family(lower, family, stems):
+        if any(_analyzed_stem_in_family(stem, family, stems) for stem in analyzed):
             seen.add(upper)
             kept.append(upper)
     return kept
 
 
-def _stem_prefix_in_family(token: str, family: set[str], stems: set[str]) -> bool:
-    if len(token) < _MIN_STEM_PREFIX:
-        return False
-    for stem in family | stems:
-        if len(stem) < _MIN_STEM_PREFIX:
+def _phrase_parts(family_tokens: set[str]):
+    for member in family_tokens:
+        parts = [part for part in (member or "").lower().split() if part]
+        if len(parts) >= 2:  # noqa: PLR2004
+            yield parts
+
+
+def phrase_member_word_tokens(tokens: list[str], family_tokens: set[str]) -> list[str]:
+    if not tokens:
+        return []
+    words = {part for parts in _phrase_parts(family_tokens) for part in parts}
+    kept: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        lower = token.lower()
+        if lower not in words or lower in SYNONYM_SKIP_WORDS:
             continue
-        if token.startswith(stem) or stem.startswith(token):
-            return True
-    return False
+        upper = token.upper()
+        if upper not in seen:
+            seen.add(upper)
+            kept.append(upper)
+    return kept
+
+
+def phrase_synonym_tokens(tokens: list[str], family_tokens: set[str]) -> list[str]:
+    if not tokens:
+        return []
+    lowered = [token.lower() for token in tokens]
+    kept: list[str] = []
+    seen: set[str] = set()
+    for parts in _phrase_parts(family_tokens):
+        width = len(parts)
+        for index in range(len(lowered) - width + 1):
+            if lowered[index : index + width] != parts:
+                continue
+            for token in tokens[index : index + width]:
+                upper = token.upper()
+                if upper not in seen:
+                    seen.add(upper)
+                    kept.append(upper)
+    return kept

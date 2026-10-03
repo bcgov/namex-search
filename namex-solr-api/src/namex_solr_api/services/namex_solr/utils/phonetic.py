@@ -108,3 +108,21 @@ def keep_phonetic_match(word, query):
         word_sound = word_first_consonant + word_first_vowels
 
     return word_sound == query_sound
+
+
+def sound_tail(word: str) -> str:
+    upper = replace_special_leading_sounds((word or "").upper())
+    if not upper:
+        return ""
+    index = 0
+    if has_leading_vowel(upper):
+        while index < len(upper) and upper[index] in _VOWELS:
+            index += 1
+        while index < len(upper) and upper[index] in _CONSONANTS:
+            index += 1
+    else:
+        while index < len(upper) and upper[index] in _CONSONANTS:
+            index += 1
+        while index < len(upper) and upper[index] in _VOWELS:
+            index += 1
+    return upper[index:]
