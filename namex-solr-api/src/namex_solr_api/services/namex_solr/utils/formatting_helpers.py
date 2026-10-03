@@ -189,6 +189,46 @@ def conflict_match_prep_terms(query_value: str, designations: list[str] | None =
     return remove_designation_tokens(prepared, designations).split()
 
 
+def identity_term_groups(terms: list[str]) -> list[list[str]]:
+    groups: list[list[str]] = []
+    index = 0
+    while index < len(terms):
+        if len(terms[index]) == 1 and terms[index].isalpha():
+            end = index + 1
+            while end < len(terms) and len(terms[end]) == 1 and terms[end].isalpha():
+                end += 1
+            if end - index >= 2:  # noqa: PLR2004
+                groups.append(terms[index:end])
+                index = end
+                continue
+        groups.append([terms[index]])
+        index += 1
+    return groups
+
+
+def _without_skip_words(terms: list[str]) -> list[str]:
+    return [term for term in terms if term.lower() not in SYNONYM_SKIP_WORDS]
+
+
+def resolve_identity_descriptive(
+    distinctive: str, descriptive: str, value: str
+) -> tuple[list[str], list[str]]:
+    if (distinctive or "").strip() or (descriptive or "").strip():
+        identity = _without_skip_words(conflict_match_prep_terms(join_hyphen_compounds(distinctive)))
+        identity_set = set(identity)
+        described = _without_skip_words(
+            [term for term in conflict_match_prep_terms(descriptive) if term not in identity_set]
+        )
+        if not described and len(identity) >= 2:  # noqa: PLR2004
+            described = [identity[-1]]
+            identity = identity[:-1]
+        return identity, described
+    terms = _without_skip_words(conflict_match_prep_terms(join_hyphen_compounds(value or "")))
+    if len(terms) >= 2:  # noqa: PLR2004
+        return terms[:-1], terms[-1:]
+    return terms, []
+
+
 def initials_group_runs(terms: list[str]) -> list[str]:
     runs: list[str] = []
     i = 0
@@ -329,6 +369,16 @@ def _distinctive_term_clause(term: str) -> str:
     if fuzzy := QueryBuilder.get_fuzzy_str(term, 1, 2):
         parts.append(f"{NameField.NAME_Q.value}:{term}{fuzzy}")
     return f"({' OR '.join(parts)})"
+
+
+def join_hyphen_compounds(query: str) -> str:
+    def replace(match: re.Match) -> str:
+        token = re.sub(r"[\s-]+", "", match.group(0))
+        if len(token) >= GLUED_FIRST_MIN_LEN:
+            return token
+        return match.group(0)
+
+    return _HYPHEN_CLUSTER.sub(replace, query or "")
 
 
 def hyphen_glued_tokens(query_value: str) -> list[str]:

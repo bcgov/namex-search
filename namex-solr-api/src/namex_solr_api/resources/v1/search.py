@@ -20,20 +20,26 @@ from namex_solr_api.services.namex_solr.utils import (
     apply_embedded_reserved_retrieve,
     apply_initials_group_exact_highlights,
     apply_leading_wildcard_rank,
+    build_identity_descriptive_query,
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
     hyphen_glued_tokens,
     keep_family_synonym_highlights,
     mark_wildcard_constant_score_boosts,
+    name_surface_tokens,
     namex_search,
     normalize_conflict_initials,
     normalize_nr_num,
     outer_wildcard_constant_score_terms,
     parse_conflict_wildcard,
+    phrase_member_word_tokens,
+    phrase_synonym_tokens,
     prep_query_str_namex,
     rank_conflict_docs,
     remove_designation_tokens,
+    resolve_identity_descriptive,
     retrieve_synonym_families_by_term,
+    select_identity_descriptive_docs,
     visible_conflict_bucket,
 )
 
@@ -84,6 +90,23 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
             PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
+        explicit_split = bool(
+            str(query_json.get("distinctive") or "").strip()
+            or str(query_json.get("descriptive") or "").strip()
+        )
+        exact_phrase = str(query_json.get(NameField.NAME.value) or "").strip()
+        dist_terms: list[str] = []
+        desc_terms: list[str] = []
+        identity_mode = not wildcard.leading and not wildcard.trailing and not (exact_phrase and not explicit_split)
+        if identity_mode:
+            dist_terms, desc_terms = resolve_identity_descriptive(
+                str(query_json.get("distinctive") or ""),
+                str(query_json.get("descriptive") or ""),
+                value or "",
+            )
+            identity_mode = bool(dist_terms)
+            if identity_mode:
+                query["value"] = " ".join([*dist_terms, *desc_terms])
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
         # TODO: verify these states
@@ -179,7 +202,14 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             stemmed_terms_map=stems_by_term,
         )
 
-        params = apply_embedded_reserved_retrieve(params, solr, strict, start)
+        identity_query = (
+            build_identity_descriptive_query(solr, params, dist_terms, desc_terms) if identity_mode else None
+        )
+        if identity_query:
+            params = replace(params, override_query=identity_query)
+        else:
+            identity_mode = False
+            params = apply_embedded_reserved_retrieve(params, solr, strict, start)
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
         docs = []
         query_value = params.query.get("value", "")
@@ -190,11 +220,15 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             if stems_by_term
             else []
         )
+        browse_families = query_json.get("synonymFamilies")
+        if not isinstance(browse_families, dict):
+            browse_families = None
         families_by_term = retrieve_synonym_families_by_term(
             query_value,
             solr.query_builder,
             NameField.NAME_Q_SYN,
             query_stems,
+            browse_families,
         )
         query_stems_by_term = {
             term: {stems_by_term[term]}
@@ -265,6 +299,13 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 )
                 if token not in other_highlights
             ]
+            name_tokens = name_surface_tokens(result.get("name") or "")
+            for token in (
+                *phrase_synonym_tokens(name_tokens, synonym_family),
+                *phrase_member_word_tokens(name_tokens, synonym_family),
+            ):
+                if token not in other_highlights and token not in synonym_highlights:
+                    synonym_highlights.append(token)
             bucket = visible_conflict_bucket(
                 classify_conflict_bucket(
                     query_value,
@@ -287,15 +328,26 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     "synonyms": list(set(synonym_highlights))
                 }
             })
-        docs = rank_conflict_docs(
-            docs,
-            query_value,
-            families_by_term,
-            None,
-            query_stems_by_term,
-            doc_token_stems,
-            glued_tokens,
-        )
+        if identity_mode:
+            docs = select_identity_descriptive_docs(
+                docs,
+                dist_terms,
+                desc_terms,
+                families_by_term,
+                None,
+                query_stems_by_term,
+                doc_token_stems,
+            )
+        else:
+            docs = rank_conflict_docs(
+                docs,
+                query_value,
+                families_by_term,
+                None,
+                query_stems_by_term,
+                doc_token_stems,
+                glued_tokens,
+            )
         if wildcard.leading and not wildcard.trailing and start == 0:
             docs = apply_leading_wildcard_rank(docs, value)
         # save search in the db
