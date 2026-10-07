@@ -13,7 +13,7 @@ from .formatting_helpers import (
     identity_term_groups,
     normalize_conflict_initials,
 )
-from .phonetic import keep_phonetic_match, replace_special_leading_sounds, sound_tail
+from .phonetic import primary_metaphone
 from .synonym_helpers import (
     keep_family_synonym_highlights,
     name_surface_tokens,
@@ -50,7 +50,6 @@ _MIN_STEM = 4
 _MIN_DISTINCTIVE = 4
 _RANK_PREFIX_LEN = 3
 _MIN_INITIALS_RUN = 2
-_LONG_PHONETIC = 6
 _STEM_SUFFIXES = (
     "ational",
     "ization",
@@ -127,13 +126,6 @@ def _fuzzy_allowed(term: str) -> int | None:
     return int(fuzzy[1:])
 
 
-def _ck_fold(word: str) -> str:
-    folded = replace_special_leading_sounds((word or "").upper())
-    if folded.startswith("C"):
-        return "K" + folded[1:]
-    return folded
-
-
 def _distinctive_name_anchor(name_tokens: list[str]) -> list[str]:
     for token in name_tokens:
         if len(token) >= _MIN_DISTINCTIVE:
@@ -141,22 +133,41 @@ def _distinctive_name_anchor(name_tokens: list[str]) -> list[str]:
     return list(name_tokens[:1]) if name_tokens else []
 
 
-def _phonetic_distance_allowed(query: str, name_token: str) -> int:
-    fuzzy = max(_fuzzy_allowed(query) or 0, _fuzzy_allowed(name_token) or 0)
-    if min(len(query), len(name_token)) >= _LONG_PHONETIC:
-        return max(fuzzy, 2)
-    return fuzzy
+def _phonetic_fold(word: str) -> str:
+    raw = "".join(char for char in (word or "").upper() if "A" <= char <= "Z")
+    folded: list[str] = []
+    index = 0
+    while index < len(raw):
+        if raw.startswith("PH", index):
+            piece = "F"
+            index += 2
+        else:
+            piece = {"V": "F", "C": "K", "Z": "S"}.get(raw[index], raw[index])
+            index += 1
+        if not folded or folded[-1] != piece:
+            folded.append(piece)
+    return "".join(folded)
+
+
+def _one_extra_vowel(left: str, right: str) -> bool:
+    longer, shorter = (left, right) if len(left) > len(right) else (right, left)
+    if len(longer) != len(shorter) + 1:
+        return False
+    return any(
+        char in "AEIOU" and f"{longer[:index]}{longer[index + 1:]}" == shorter
+        for index, char in enumerate(longer)
+    )
 
 
 def _real_phonetic_match(name_token: str, query: str) -> bool:
-    folded_name = _ck_fold(name_token)
-    folded_query = _ck_fold(query)
-    if not keep_phonetic_match(folded_name, folded_query):
+    name_code = primary_metaphone(name_token)
+    query_code = primary_metaphone(query)
+    if not name_code or name_code != query_code:
         return False
-    if sound_tail(folded_name) != sound_tail(folded_query):
-        return False
-    distance = _edit_distance(folded_name, folded_query)
-    return distance <= _phonetic_distance_allowed(query, name_token)
+    if len(name_code) >= 4:  # noqa: PLR2004
+        return True
+    left, right = _phonetic_fold(name_token), _phonetic_fold(query)
+    return left == right or _one_extra_vowel(left, right)
 
 
 def _fuzzy_cover(query: str, name_tokens: list[str]) -> bool:
@@ -693,9 +704,17 @@ def _identity_group_cover(  # noqa: PLR0913
         sound_tokens,
         name_token_stems,
     )
-    if cover == _COVER_FAMILY:
-        return None
-    return cover
+    if cover != _COVER_FAMILY:
+        return cover
+    return cover_query_token(
+        group[0],
+        name_tokens,
+        set(),
+        set(),
+        _sets_for_term(query_stems_by_term, group[0]),
+        sound_tokens,
+        name_token_stems,
+    )
 
 
 def _descriptive_group_cover(  # noqa: PLR0913
@@ -815,10 +834,6 @@ def select_identity_descriptive_docs(  # noqa: PLR0913
             )
         if identity_covers[0] is None:
             continue
-        if identity_covers[0] == _COVER_PHONETIC:
-            doc["bucket"] = BUCKET_PHONETIC
-        elif identity_covers[0] == _COVER_FUZZY:
-            doc["bucket"] = BUCKET_SYNONYM
         descriptive_covers = [
             _descriptive_group_cover(
                 group,
@@ -831,6 +846,15 @@ def select_identity_descriptive_docs(  # noqa: PLR0913
             )
             for group, excluded in zip(descriptive_groups, excluded_by_group, strict=True)
         ]
+        described = any(cover in _DESC_DIRECT for cover in descriptive_covers)
+        if identity_covers[0] == _COVER_PHONETIC:
+            doc["bucket"] = BUCKET_PHONETIC
+            if described:
+                doc["_phonetic_desc"] = True
+        elif identity_covers[0] == _COVER_FUZZY:
+            doc["bucket"] = BUCKET_SYNONYM
+        elif described and identity_covers[0] in _COVER_STRONG:
+            doc["_keep"] = True
         ranked.append((doc, identity_covers, descriptive_covers, name_tokens))
 
     def sort_key(item: tuple) -> tuple[int, int, int, int, int, int, int, int, int, int]:
@@ -968,22 +992,38 @@ def promote_adjacent_patterns(  # noqa: PLR0913
         if not name or name in seen:
             continue
         seen.add(name)
-        top.append({**doc, "bucket": BUCKET_SYNONYM})
-    phonetic = []
+        top.append({**doc, "bucket": BUCKET_SYNONYM, "_keep": True})
     rest = []
     for doc in forward:
         name = (doc.get("name") or "").upper()
         if not name or name in seen:
             continue
         seen.add(name)
+        rest.append(doc)
+    return top + rest
+
+
+def fit_phonetic_page(docs: list[dict], rows: int) -> list[dict]:
+    """Keep a described sound-alike, and an ordinary one only when a seat remains."""
+    protected = []
+    phonetic_desc = []
+    displaceable = []
+    phonetic_only = []
+    for doc in docs:
+        described_sound = doc.pop("_phonetic_desc", False)
+        keep = doc.pop("_keep", False)
         if doc.get("bucket") == BUCKET_PHONETIC:
-            phonetic.append(doc)
+            (phonetic_desc if described_sound else phonetic_only).append(doc)
+        elif keep:
+            protected.append(doc)
         else:
-            rest.append(doc)
+            displaceable.append(doc)
     if rows <= 0:
-        return top + rest + phonetic
-    if len(phonetic) >= rows:
-        return phonetic[:rows]
-    top = top[: rows - len(phonetic)]
-    rest_room = rows - len(phonetic) - len(top)
-    return top + rest[:rest_room] + phonetic
+        return protected + phonetic_desc + displaceable + phonetic_only
+    chosen: list[dict] = []
+    for group in (protected, phonetic_desc, displaceable, phonetic_only):
+        room = rows - len(chosen)
+        if room <= 0:
+            break
+        chosen.extend(group[:room])
+    return chosen

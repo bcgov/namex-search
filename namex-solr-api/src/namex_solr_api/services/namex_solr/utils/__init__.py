@@ -12,6 +12,7 @@ from .analysis_helpers import (
 from .conflict_bucket import (
     classify_conflict_bucket,
     cover_query_token,
+    fit_phonetic_page,
     promote_adjacent_patterns,
     rank_conflict_docs,
     select_identity_descriptive_docs,
@@ -53,6 +54,7 @@ from .namex_search_helper import (
     build_adjacent_pattern_query,
     build_identity_descriptive_query,
     build_loose_first_query,
+    build_phonetic_first_queries,
     embed_reserved_retrieve_query,
     join_embedded_conflict_query,
     namex_search,
