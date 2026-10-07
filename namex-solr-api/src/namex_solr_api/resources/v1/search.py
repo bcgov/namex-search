@@ -25,8 +25,10 @@ from namex_solr_api.services.namex_solr.utils import (
     apply_leading_wildcard_rank,
     build_identity_descriptive_query,
     build_loose_first_query,
+    build_phonetic_first_queries,
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
+    fit_phonetic_page,
     hyphen_glued_tokens,
     keep_family_synonym_highlights,
     mark_wildcard_constant_score_boosts,
@@ -311,6 +313,26 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             max_highlighted_docs,
             strict,
         )
+        if identity_mode and start == 0 and rows > 0:
+            browse = query_json.get("synonymFamilies")
+            if not isinstance(browse, dict):
+                browse = None
+            sound_query, described_sound = build_phonetic_first_queries(
+                solr, params, dist_terms, desc_terms, browse
+            )
+            for extra_query in (described_sound, sound_query):
+                if not extra_query:
+                    continue
+                fetched = _fetch_extra(
+                    params,
+                    extra_query,
+                    rows,
+                    max_highlighted_docs,
+                    strict,
+                    "Phonetic conflict search failed.",
+                )
+                if fetched:
+                    results, solr_highlighting = _merge_extra(results, solr_highlighting, *fetched)
         docs = []
         query_value = params.query.get("value", "")
         glued_tokens = hyphen_glued_tokens(value)
@@ -448,6 +470,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                     query_stems_by_term,
                     doc_token_stems,
                 )
+            docs = fit_phonetic_page(docs, rows)
         else:
             docs = rank_conflict_docs(
                 docs,

@@ -17,6 +17,7 @@ from .formatting_helpers import (
     reserved_prefix_params,
     should_run_reserved_coverage,
 )
+from .phonetic import primary_metaphone
 
 IDENTITY_DESCRIPTIVE_BOOST = 10_000
 IDENTITY_FULL_BOOST = 1_000_000
@@ -24,6 +25,7 @@ PATTERN_CANDIDATE_ROWS = 25
 LOOSE_FIRST_ROWS = 10
 _MAX_PATTERN_WORDS = 5
 _PATTERN_CLAUSE_BUDGET = 200
+_INDEXED_METAPHONE_LEN = 4
 
 
 def format_full_query_boost(info: dict) -> str:
@@ -131,6 +133,102 @@ def _name_splits(word: str) -> list[tuple[str, str]]:
     return [(word[:index], word[index:]) for index in range(3, len(word) - 2)]
 
 
+def _group_clauses(solr: NamexSolr, params: QueryParams, groups: list[list[str]], with_synonym: bool) -> list[str]:
+    builder = solr.query_builder
+    stems_by_term = params.stemmed_terms_map or {}
+    constant = frozenset(params.constant_score_terms or [])
+    words = [group[0] for group in groups if len(group) == 1]
+    stems = [stems_by_term.get(term, term) for term in words]
+    built = []
+    word_index = 0
+    synonym_info: dict = {}
+    for group in groups:
+        if len(group) >= 2:  # noqa: PLR2004
+            glued = "".join(group)
+            built.append(f"{NameField.NAME_Q_EXACT.value}:{glued} OR {NameField.NAME_Q.value}:{glued}")
+            continue
+        clause = builder.build_term_clause(
+            group[0],
+            params.query_fields,
+            params.query_boost_fields,
+            params.query_fuzzy_fields,
+            True,
+            constant,
+        )
+        if with_synonym:
+            clause = builder.build_term_synonym_clauses(
+                clause,
+                words,
+                word_index,
+                synonym_info,
+                params.query_synonym_fields,
+                True,
+                params.query_boost_fields,
+                stems,
+                True,
+                constant,
+            )
+        built.append(clause)
+        word_index += 1
+    return built
+
+
+def _described_clause(solr: NamexSolr, params: QueryParams, descriptive: list[str]) -> str:
+    described_clauses = [clause for clause in _group_clauses(solr, params, identity_term_groups(descriptive), True) if clause]
+    described = " OR ".join(f"({clause})" for clause in described_clauses)
+    if len(described_clauses) > 1:
+        described = f"({described})"
+    return described
+
+
+def _family_name_clause(descriptive: list[str], families: dict | None) -> str:
+    if not families:
+        return ""
+    own = {term.lower() for term in descriptive}
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for term in descriptive:
+        members = families.get(term) or families.get(term.lower()) or []
+        if isinstance(members, str):
+            members = [members]
+        for member in members:
+            for piece in str(member).replace("-", " ").split():
+                token = "".join(char for char in piece.lower() if char.isalnum())
+                if len(token) < 2 or token in own or token in seen:  # noqa: PLR2004
+                    continue
+                seen.add(token)
+                tokens.append(f"{NameField.NAME_Q.value}:{token}")
+    return " OR ".join(tokens)
+
+
+def _phonetic_term(word: str) -> str:
+    code = primary_metaphone(word, _INDEXED_METAPHONE_LEN)
+    if not code:
+        return ""
+    return f'_query_:"{{!term f={NameField.NAME_Q_PHON_EN.value}}}{code}"'
+
+
+def build_phonetic_first_queries(
+    solr: NamexSolr,
+    params: QueryParams,
+    distinctive: list[str],
+    descriptive: list[str],
+    families: dict | None = None,
+) -> tuple[str | None, str | None]:
+    groups = identity_term_groups(distinctive)
+    if not groups or len(groups[0]) != 1:
+        return None, None
+    phonetic = _phonetic_term(groups[0][0])
+    if not phonetic:
+        return None, None
+    described = _described_clause(solr, params, descriptive)
+    family = _family_name_clause(descriptive, families)
+    if family:
+        described = f"({described} OR {family})" if described else f"({family})"
+    described_query = f"({phonetic}) AND {described}" if described else None
+    return phonetic, described_query
+
+
 def build_identity_descriptive_query(
     solr: NamexSolr,
     params: QueryParams,
@@ -140,47 +238,7 @@ def build_identity_descriptive_query(
     identity_groups = identity_term_groups(distinctive)
     if not identity_groups:
         return None
-    builder = solr.query_builder
-    stems_by_term = params.stemmed_terms_map or {}
-    constant = frozenset(params.constant_score_terms or [])
-    synonym_info: dict = {}
-
-    def clauses(groups: list[list[str]], with_synonym: bool) -> list[str]:
-        words = [group[0] for group in groups if len(group) == 1]
-        stems = [stems_by_term.get(term, term) for term in words]
-        built = []
-        word_index = 0
-        for group in groups:
-            if len(group) >= 2:  # noqa: PLR2004
-                glued = "".join(group)
-                built.append(f"{NameField.NAME_Q_EXACT.value}:{glued} OR {NameField.NAME_Q.value}:{glued}")
-                continue
-            clause = builder.build_term_clause(
-                group[0],
-                params.query_fields,
-                params.query_boost_fields,
-                params.query_fuzzy_fields,
-                True,
-                constant,
-            )
-            if with_synonym:
-                clause = builder.build_term_synonym_clauses(
-                    clause,
-                    words,
-                    word_index,
-                    synonym_info,
-                    params.query_synonym_fields,
-                    True,
-                    params.query_boost_fields,
-                    stems,
-                    True,
-                    constant,
-                )
-            built.append(clause)
-            word_index += 1
-        return built
-
-    identity_clauses = clauses(identity_groups, False)
+    identity_clauses = _group_clauses(solr, params, identity_groups, False)
     if identity_groups and len(identity_groups[0]) == 1:
         term = identity_groups[0][0]
         lead = "".join(ch for ch in term.upper() if ch.isalnum())
@@ -198,10 +256,7 @@ def build_identity_descriptive_query(
     identity = f"{first} AND {later}" if later else first
     if not identity:
         return None
-    described_clauses = [clause for clause in clauses(identity_term_groups(descriptive), True) if clause]
-    described = " OR ".join(f"({clause})" for clause in described_clauses)
-    if len(described_clauses) > 1:
-        described = f"({described})"
+    described = _described_clause(solr, params, descriptive)
     if not later:
         if not described:
             single = f"({identity})"
