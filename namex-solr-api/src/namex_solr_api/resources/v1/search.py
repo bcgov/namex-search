@@ -14,6 +14,9 @@ from namex_solr_api.services import jwt, solr
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 from namex_solr_api.services.namex_solr.utils import (
+    LOOSE_FIRST_ROWS,
+    PATTERN_CANDIDATE_ROWS,
+    adjacent_pattern_queries,
     analyze_stemmed_agro_stem_map,
     analyze_stemmed_agro_token_stems,
     apply_conflict_wildcard_boosts,
@@ -21,6 +24,7 @@ from namex_solr_api.services.namex_solr.utils import (
     apply_initials_group_exact_highlights,
     apply_leading_wildcard_rank,
     build_identity_descriptive_query,
+    build_loose_first_query,
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
     hyphen_glued_tokens,
@@ -32,9 +36,11 @@ from namex_solr_api.services.namex_solr.utils import (
     normalize_nr_num,
     outer_wildcard_constant_score_terms,
     parse_conflict_wildcard,
+    pattern_search_terms,
     phrase_member_word_tokens,
     phrase_synonym_tokens,
     prep_query_str_namex,
+    promote_adjacent_patterns,
     rank_conflict_docs,
     remove_designation_tokens,
     resolve_identity_descriptive,
@@ -44,6 +50,89 @@ from namex_solr_api.services.namex_solr.utils import (
 )
 
 bp = Blueprint("SEARCH", __name__, url_prefix="/search")
+
+
+def _doc_key(doc: dict) -> str:
+    return str(doc.get(NameField.UNIQUE_KEY.value) or doc.get("name") or "")
+
+
+def _merge_extra(results: dict, highlighting: dict, extra_results: dict, extra_highlighting: dict):
+    docs = list((results.get("response") or {}).get("docs") or [])
+    seen = {_doc_key(doc) for doc in docs}
+    for doc in (extra_results.get("response") or {}).get("docs") or []:
+        key = _doc_key(doc)
+        if key in seen:
+            continue
+        seen.add(key)
+        docs.append(doc)
+    merged = dict(results)
+    response = dict(results.get("response") or {})
+    response["docs"] = docs
+    merged["response"] = response
+    merged_highlighting = dict(highlighting)
+    for key, value in extra_highlighting.items():
+        if key not in merged_highlighting:
+            merged_highlighting[key] = value
+    return merged, merged_highlighting
+
+
+def _fetch_extra(  # noqa: PLR0913
+    params: QueryParams,
+    query: str,
+    rows: int,
+    max_highlighted_docs: int,
+    is_strict: bool,
+    failure: str,
+):
+    try:
+        return _conflict_solr_search(
+            replace(params, override_query=query, rows=rows, start=0),
+            is_strict,
+            max_highlighted_docs,
+        )
+    except Exception:
+        current_app.logger.warning(failure, exc_info=True)
+        return None
+
+
+def _with_adjacent_patterns(  # noqa: PLR0913
+    results: dict,
+    highlighting: dict,
+    params: QueryParams,
+    dist_terms: list[str],
+    desc_terms: list[str],
+    identity_mode: bool,
+    start: int,
+    max_highlighted_docs: int,
+    is_strict: bool,
+) -> tuple[dict, dict]:
+    pattern_terms = pattern_search_terms(dist_terms, desc_terms)
+    if not identity_mode or start != 0 or not pattern_terms:
+        return results, highlighting
+    for pattern_query in adjacent_pattern_queries(pattern_terms):
+        fetched = _fetch_extra(
+            params,
+            pattern_query,
+            PATTERN_CANDIDATE_ROWS,
+            max_highlighted_docs,
+            is_strict,
+            "Adjacent pattern conflict search failed.",
+        )
+        if not fetched:
+            break
+        results, highlighting = _merge_extra(results, highlighting, *fetched)
+    if loose_query := build_loose_first_query(dist_terms):
+        fetched = _fetch_extra(
+            params,
+            loose_query,
+            LOOSE_FIRST_ROWS,
+            max_highlighted_docs,
+            is_strict,
+            "Loose first-word conflict search failed.",
+        )
+        if fetched:
+            results, highlighting = _merge_extra(results, highlighting, *fetched)
+    return results, highlighting
 
 
 def _conflict_solr_search(params: QueryParams, is_strict: bool, max_highlighted_docs: int):
@@ -211,6 +300,17 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             identity_mode = False
             params = apply_embedded_reserved_retrieve(params, solr, strict, start)
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
+        results, solr_highlighting = _with_adjacent_patterns(
+            results,
+            solr_highlighting,
+            params,
+            dist_terms,
+            desc_terms,
+            identity_mode,
+            start,
+            max_highlighted_docs,
+            strict,
+        )
         docs = []
         query_value = params.query.get("value", "")
         glued_tokens = hyphen_glued_tokens(value)
@@ -329,6 +429,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 }
             })
         if identity_mode:
+            built_docs = docs
             docs = select_identity_descriptive_docs(
                 docs,
                 dist_terms,
@@ -338,6 +439,15 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 query_stems_by_term,
                 doc_token_stems,
             )
+            if start == 0 and (pattern_terms := pattern_search_terms(dist_terms, desc_terms)):
+                docs = promote_adjacent_patterns(
+                    docs,
+                    built_docs,
+                    pattern_terms,
+                    rows,
+                    query_stems_by_term,
+                    doc_token_stems,
+                )
         else:
             docs = rank_conflict_docs(
                 docs,

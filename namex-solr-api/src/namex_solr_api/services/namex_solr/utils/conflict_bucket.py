@@ -1,3 +1,5 @@
+from itertools import permutations
+
 from namex_solr_api.config import Config
 from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
 from namex_solr_api.services.base_solr.utils.query_builder import (
@@ -857,3 +859,131 @@ def select_identity_descriptive_docs(  # noqa: PLR0913
 
     ranked.sort(key=sort_key, reverse=True)
     return [item[0] for item in ranked]
+
+
+def _folded_forms(word: str) -> set[str]:
+    forms = {word}
+    if len(word) > 2 and word.endswith("y"):  # noqa: PLR2004
+        forms.add(word[:-1] + "ies")
+    if len(word) > 3 and word.endswith("ies"):  # noqa: PLR2004
+        forms.add(word[:-3] + "y")
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):  # noqa: PLR2004
+        forms.add(word[:-1])
+    if len(word) > 2:  # noqa: PLR2004
+        forms.add(word + "s")
+    return forms
+
+
+def _pattern_word_match(
+    query: str,
+    token: str,
+    query_stems_by_term: dict[str, set[str]] | None,
+    name_token_stems: dict[str, list[str]] | None,
+) -> str | None:
+    word = (query or "").lower()
+    surface = (token or "").lower().strip(".")
+    if not word or not surface:
+        return None
+    if word == surface:
+        return _COVER_EXACT
+    if surface in _folded_forms(word) or word in _folded_forms(surface):
+        return _COVER_STEM
+    if _light_stem(word) == _light_stem(surface):
+        return _COVER_STEM
+    query_stems = {stem.lower() for stem in (query_stems_by_term or {}).get(word, set()) if stem}
+    token_stems = {stem.lower() for stem in (name_token_stems or {}).get(surface, []) if stem}
+    if query_stems and token_stems and query_stems & token_stems:
+        return _COVER_STEM
+    return None
+
+
+def _rearranged_quality(
+    words: list[str],
+    window: list[str],
+    query_stems_by_term: dict[str, set[str]] | None,
+    name_token_stems: dict[str, list[str]] | None,
+) -> str | None:
+    if all(
+        _pattern_word_match(word, token, query_stems_by_term, name_token_stems)
+        for word, token in zip(words, window, strict=True)
+    ):
+        return None
+    best = None
+    for order in permutations(words):
+        qualities = [
+            _pattern_word_match(word, token, query_stems_by_term, name_token_stems)
+            for word, token in zip(order, window, strict=True)
+        ]
+        if not all(qualities):
+            continue
+        quality = _COVER_EXACT if all(item == _COVER_EXACT for item in qualities) else _COVER_STEM
+        if quality == _COVER_EXACT:
+            return quality
+        best = quality
+    return best
+
+
+def _adjacent_pattern_rank(
+    words: list[str],
+    name: str,
+    query_stems_by_term: dict[str, set[str]] | None,
+    name_token_stems: dict[str, list[str]] | None,
+) -> tuple[int, int, int] | None:
+    tokens = _usable_name_tokens(name, {word.lower() for word in words})
+    width = len(words)
+    outside = len(tokens) - width
+    if width < 2 or outside < 0 or outside > 1:  # noqa: PLR2004
+        return None
+    quality = _rearranged_quality(
+        words,
+        tokens[:width],
+        query_stems_by_term,
+        name_token_stems,
+    )
+    if quality is None:
+        return None
+    return (1, int(quality == _COVER_EXACT), -outside)
+
+
+def promote_adjacent_patterns(  # noqa: PLR0913
+    forward: list[dict],
+    candidates: list[dict],
+    distinctive: list[str],
+    rows: int,
+    query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
+) -> list[dict]:
+    """Place a leading rearrangement, with at most one following word, ahead of the forward list."""
+    words = [word for word in distinctive if word]
+    ranked: list[tuple[tuple[int, int, int], dict]] = []
+    for doc in candidates:
+        rank = _adjacent_pattern_rank(words, doc.get("name") or "", query_stems_by_term, name_token_stems)
+        if rank is not None:
+            ranked.append((rank, doc))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    seen: set[str] = set()
+    top: list[dict] = []
+    for _rank, doc in ranked:
+        name = (doc.get("name") or "").upper()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        top.append({**doc, "bucket": BUCKET_SYNONYM})
+    phonetic = []
+    rest = []
+    for doc in forward:
+        name = (doc.get("name") or "").upper()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        if doc.get("bucket") == BUCKET_PHONETIC:
+            phonetic.append(doc)
+        else:
+            rest.append(doc)
+    if rows <= 0:
+        return top + rest + phonetic
+    if len(phonetic) >= rows:
+        return phonetic[:rows]
+    top = top[: rows - len(phonetic)]
+    rest_room = rows - len(phonetic) - len(top)
+    return top + rest[:rest_room] + phonetic
