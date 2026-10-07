@@ -1,6 +1,7 @@
 """NameX solr search functions."""
 import re
 from dataclasses import replace
+from itertools import permutations
 
 from namex_solr_api.services.base_solr.utils import QueryParams
 from namex_solr_api.services.base_solr.utils.query_builder import QueryBuilder
@@ -19,6 +20,10 @@ from .formatting_helpers import (
 
 IDENTITY_DESCRIPTIVE_BOOST = 10_000
 IDENTITY_FULL_BOOST = 1_000_000
+PATTERN_CANDIDATE_ROWS = 25
+LOOSE_FIRST_ROWS = 10
+_MAX_PATTERN_WORDS = 5
+_PATTERN_CLAUSE_BUDGET = 200
 
 
 def format_full_query_boost(info: dict) -> str:
@@ -99,6 +104,27 @@ def embed_reserved_retrieve_query(params: QueryParams, solr: NamexSolr, is_stric
     return join_embedded_conflict_query(query_with_full_boosts(params, solr, True, False), reserved)
 
 
+def _widened_prefix(lead: str) -> str:
+    if len(lead) >= 5 and lead.endswith("Y"):  # noqa: PLR2004
+        return f"{lead[:-1]}*"
+    if len(lead) >= 5 and lead.endswith("IES"):  # noqa: PLR2004
+        return f"{lead[:-3]}*"
+    if len(lead) >= 5 and lead.endswith("S") and not lead.endswith("SS"):  # noqa: PLR2004
+        return f"{lead[:-1]}*"
+    return f"{lead}*"
+
+
+def build_loose_first_query(distinctive: list[str]) -> str | None:
+    groups = identity_term_groups(distinctive)
+    if not groups or len(groups[0]) != 1:
+        return None
+    term = groups[0][0]
+    fuzzy = QueryBuilder.get_fuzzy_str(term, 1, 2)
+    if not fuzzy:
+        return None
+    return f"{NameField.NAME_Q.value}:{term}{fuzzy}"
+
+
 def _name_splits(word: str) -> list[tuple[str, str]]:
     if len(word) < 6:  # noqa: PLR2004
         return []
@@ -160,12 +186,9 @@ def build_identity_descriptive_query(
         lead = "".join(ch for ch in term.upper() if ch.isalnum())
         broad = identity_clauses[0]
         if lead:
-            exact = f"name:{lead}* AND ({broad})"
+            anchored = f"name:{_widened_prefix(lead)} AND ({broad})"
             whole = f"name:{lead}\\ *"
-            fuzzy = QueryBuilder.get_fuzzy_str(term, 1, 2)
-            pieces = [f"(({whole})^{IDENTITY_FULL_BOOST})", f"({exact})"]
-            if fuzzy:
-                pieces.append(f"({NameField.NAME_Q.value}:{term}{fuzzy})")
+            pieces = [f"(({whole})^{IDENTITY_FULL_BOOST})", f"({anchored})"]
             pieces.extend(
                 f"((name:{left}\\ {right}*)^{IDENTITY_FULL_BOOST})" for left, right in _name_splits(lead)
             )
@@ -181,7 +204,9 @@ def build_identity_descriptive_query(
         described = f"({described})"
     if not later:
         if not described:
-            return f"({identity})"
+            single = f"({identity})"
+            loose = build_loose_first_query(distinctive)
+            return f"{single} OR ({loose})" if loose else single
         return f"({identity}) OR (({identity} AND {described})^{IDENTITY_DESCRIPTIVE_BOOST})"
     full_desc = IDENTITY_FULL_BOOST * IDENTITY_DESCRIPTIVE_BOOST
     parts = [f"({first})", f"(({first} AND {later})^{IDENTITY_FULL_BOOST})"]
@@ -189,6 +214,88 @@ def build_identity_descriptive_query(
         parts.append(f"(({first} AND {described})^{IDENTITY_DESCRIPTIVE_BOOST})")
         parts.append(f"(({first} AND {later} AND {described})^{full_desc})")
     return " OR ".join(parts)
+
+
+def _name_token(word: str) -> str:
+    return "".join(ch for ch in word.upper() if ch.isalnum())
+
+
+def _span_patterns(tokens: list[str]) -> list[str]:
+    exact = [_name_token(token) for token in tokens]
+    if any(not token for token in exact):
+        return []
+    spans = ["\\ ".join(exact)]
+    loose = []
+    widened = False
+    for token in exact:
+        if len(token) >= 5 and token.endswith("Y"):  # noqa: PLR2004
+            loose.append(f"{token[:-1]}*")
+            widened = True
+        elif len(token) >= 5 and token.endswith("IES"):  # noqa: PLR2004
+            loose.append(f"{token[:-3]}*")
+            widened = True
+        elif len(token) >= 5 and token.endswith("S") and not token.endswith("SS"):  # noqa: PLR2004
+            loose.append(f"{token[:-1]}*")
+            widened = True
+        else:
+            loose.append(token)
+    if widened:
+        spans.append("\\ ".join(loose))
+    return spans
+
+
+_GAP_TOKENS = ("&", "AND", "\\+")
+
+
+def _span_clauses(span: str) -> list[str]:
+    tail = "" if span.endswith("*") else "*"
+    parts = span.split("\\ ")
+    phrases = [span]
+    if len(parts) > 1:
+        for index in range(1, len(parts)):
+            for gap in _GAP_TOKENS:
+                phrases.append("\\ ".join([*parts[:index], gap, *parts[index:]]))
+    return [f"(name:{phrase}{tail})" for phrase in phrases]
+
+
+def pattern_search_terms(distinctive: list[str], descriptive: list[str]) -> list[str]:
+    """Rearrange the distinctive and descriptive words when the search has two or more."""
+    words = [word for word in (*distinctive, *descriptive) if word]
+    if len(words) < 2:  # noqa: PLR2004
+        return []
+    return words
+
+
+def _adjacent_pattern_clauses(words: list[str]) -> list[str]:
+    cleaned = [word for word in words if word]
+    if len(cleaned) < 2 or len(cleaned) > _MAX_PATTERN_WORDS:  # noqa: PLR2004
+        return []
+    typed = tuple(word.lower() for word in cleaned)
+    clauses = []
+    for perm in permutations(cleaned):
+        if tuple(word.lower() for word in perm) == typed:
+            continue
+        for span in _span_patterns(perm):
+            clauses.extend(_span_clauses(span))
+    return clauses
+
+
+def build_adjacent_pattern_query(words: list[str]) -> str | None:
+    """Find the same words side by side in an order other than the typed order."""
+    clauses = _adjacent_pattern_clauses(words)
+    if not clauses:
+        return None
+    return " OR ".join(clauses)
+
+
+def adjacent_pattern_queries(words: list[str]) -> list[str]:
+    clauses = _adjacent_pattern_clauses(words)
+    if not clauses:
+        return []
+    return [
+        " OR ".join(clauses[start : start + _PATTERN_CLAUSE_BUDGET])
+        for start in range(0, len(clauses), _PATTERN_CLAUSE_BUDGET)
+    ]
 
 
 def apply_embedded_reserved_retrieve(params: QueryParams, solr: NamexSolr, is_strict: bool, start: int) -> QueryParams:

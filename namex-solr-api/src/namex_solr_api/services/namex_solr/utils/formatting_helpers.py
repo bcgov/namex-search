@@ -219,9 +219,6 @@ def resolve_identity_descriptive(
         described = _without_skip_words(
             [term for term in conflict_match_prep_terms(descriptive) if term not in identity_set]
         )
-        if not described and len(identity) >= 2:  # noqa: PLR2004
-            described = [identity[-1]]
-            identity = identity[:-1]
         return identity, described
     terms = _without_skip_words(conflict_match_prep_terms(join_hyphen_compounds(value or "")))
     if len(terms) >= 2:  # noqa: PLR2004
