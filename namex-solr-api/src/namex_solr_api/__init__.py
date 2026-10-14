@@ -39,6 +39,10 @@ import os
 from http import HTTPStatus
 from uuid import uuid4
 
+from cloud_sql_connector import (
+    DBConfig,
+    setup_pg8000_close_event_listener,
+)
 from flask import Flask, current_app, redirect, request
 from flask_migrate import Migrate
 
@@ -66,7 +70,27 @@ def create_app(environment: str = os.getenv("DEPLOYMENT_ENV", "production"), **k
     app.logger = StructuredLogging(app).get_logger().new(worker_id=str(uuid4()))
     app.config.from_object(CONFIG_MAP.get(environment, ProductionConfig))
 
+    if app.config.get("CLOUDSQL_INSTANCE_CONNECTION_NAME"):
+        schema = "public"
+        db_config = DBConfig(
+            instance_name=app.config["CLOUDSQL_INSTANCE_CONNECTION_NAME"],
+            database=app.config["DB_NAME"],
+            user=app.config["DB_USER"],
+            ip_type=app.config["DB_IP_TYPE"],
+            schema=schema if environment != "migration" else None,
+            pool_timeout=int(app.config["DB_CONN_WAIT_TIMEOUT"]),
+            pool_recycle=int(app.config["DB_CONN_TIMEOUT"]),
+            pool_size=int(app.config["DB_MIN_POOL_SIZE"]),
+            max_overflow=int(app.config["DB_MAX_POOL_SIZE"]) - int(app.config["DB_MIN_POOL_SIZE"]),
+        )
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = db_config.get_engine_options()
+
     db.init_app(app)
+
+    if environment != "migration" and app.config.get("CLOUDSQL_INSTANCE_CONNECTION_NAME"):
+        with app.app_context():
+            engine = db.engine
+            setup_pg8000_close_event_listener(engine)
 
     if environment == "migration":
         Migrate(app, db)
