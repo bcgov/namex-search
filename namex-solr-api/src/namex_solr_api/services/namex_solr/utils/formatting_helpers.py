@@ -306,11 +306,10 @@ def build_initials_exact_boosts(terms: list[str], boost: str | None = None) -> l
     from namex_solr_api.services.namex_solr.doc_models import NameField
 
     runs, _ = _initials_group_parts(terms)
-    field = NameField.NAME_Q_EXACT
     return [
         {
-            "field": field,
-            "term_clauses": [f"{field.value}:{run}"],
+            "field": NameField.NAME_Q_EXACT,
+            "value": run,
             "boost": boost,
         }
         for run in runs
