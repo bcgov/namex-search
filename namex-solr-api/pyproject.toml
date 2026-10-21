@@ -16,6 +16,8 @@ dependencies = [
     "flask-cors (>=5.0.1,<6.0.0)",
     "flask-jwt-oidc (>=0.8.0,<0.9.0)",
     "structured-logging @ git+https://github.com/bcgov/sbc-connect-common.git@main#subdirectory=python/structured-logging",
+    "cloud-sql-connector @ git+https://github.com/bcgov/sbc-connect-common.git@main#subdirectory=python/cloud-sql-connector",
+    "pg8000 (>=1.31.2,<2.0.0)",
     "psycopg2-binary (>=2.9.10,<3.0.0)",
     "python-dotenv (>=1.1.0,<2.0.0)",
 ]
