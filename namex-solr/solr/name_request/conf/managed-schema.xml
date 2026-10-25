@@ -476,14 +476,18 @@
     </fieldType>
 
     <dynamicField name="*_phon_en" type="phonetic_en"  indexed="true"  stored="true"/>
+    <!-- Primary DoubleMetaphone only (KATHY→K0). Do not use name="doubleMetaphone":
+         that filter also emits the alternate code (KT), which collides KATHY with GOOD/GATE.
+         inject=true keeps the original token so highlights stay CATHY, not K0.
+         Changing this field type requires a reindex of name_q_phon_en. -->
     <fieldType name="phonetic_en" stored="true" indexed="true" class="solr.TextField" >
       <analyzer type="index">
         <tokenizer name="standard"/>
-        <filter name="doubleMetaphone" inject="true"/>
+        <filter name="phonetic" encoder="DoubleMetaphone" inject="true"/>
       </analyzer>
       <analyzer type="query">
         <tokenizer name="standard"/>
-        <filter name="doubleMetaphone" inject="true"/>
+        <filter name="phonetic" encoder="DoubleMetaphone" inject="true"/>
       </analyzer>
     </fieldType>
 
