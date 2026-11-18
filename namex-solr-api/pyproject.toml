@@ -1,13 +1,13 @@
 [project]
 name = "namex-solr-api"
-version = "1.0.12"
+version = "1.0.13"
 description = ""
 authors = [
     {name = "Kial Jinnah",email = "kialj876@gmail.com"}
 ]
 license = {text = "BSD 3-Clause"}
 readme = "README.md"
-requires-python = ">=3.13,<4"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "flask (>=3.1.0,<4.0.0)",
     "gunicorn (>=23.0.0,<24.0.0)",

@@ -178,6 +178,7 @@ def namex_search_highlighting(params: QueryParams, highlight_query: str | None =
         "hl.tag.pre": "|||",
         "hl.tag.post": "|||",
         "hl.fl": ",".join([x.value for x in params.highlighted_fields]),
+        "hl.weightMatches": "false",
     }
     if highlight_query:
         hl_params["hl.q"] = highlight_query
