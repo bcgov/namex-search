@@ -31,14 +31,16 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Base db connection class using namex-solr-api cloud SQL utilities."""
+"""Base db connection class."""
 
+import google.auth
 from cloud_sql_connector import (
     DBConfig,
     TCPDBConfig,
     setup_pg8000_close_event_listener,
     setup_search_path_event_listener,
 )
+from google.cloud.sql.connector import Connector
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import scoped_session, sessionmaker
 
@@ -46,26 +48,54 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 class BaseDB:
     """Database connection wrapper supporting both Cloud SQL Connector and TCP modes."""
 
-    def __init__(self, db_config: DBConfig | TCPDBConfig, test_connection=True):
+    def __init__(
+        self,
+        db_config: DBConfig | TCPDBConfig,
+        test_connection=True,
+        credentials_path: str | None = None,
+    ):
         """Initialize the db connection.
 
         Args:
             db_config: Database configuration (DBConfig for Cloud SQL Connector or TCPDBConfig for TCP)
             test_connection: Whether to test the connection after initialization
+            credentials_path: Credentials file for Cloud SQL Connector mode
         """
-        engine_options = db_config.get_engine_options()
-
+        self.connector = None
         if isinstance(db_config, TCPDBConfig):
-            self.engine = create_engine("postgresql://", **engine_options)
+            self.engine = create_engine("postgresql://", **db_config.get_engine_options())
         else:
-            self.engine = create_engine("postgresql+pg8000://", **engine_options)
+            credentials = None
+            if credentials_path:
+                credentials, _ = google.auth.load_credentials_from_file(credentials_path)
+            self.connector = Connector(credentials=credentials)
+            self.engine = create_engine(
+                "postgresql+pg8000://",
+                creator=lambda: self.connector.connect(
+                    db_config.instance_name,
+                    db_config.driver,
+                    ip_type=db_config.ip_type,
+                    db=db_config.database,
+                    user=db_config.user,
+                    enable_iam_auth=db_config.enable_iam_auth,
+                ),
+                pool_size=5,
+                max_overflow=2,
+                pool_timeout=10,
+                pool_recycle=1800,
+                connect_args={"use_native_uuid": False},
+            )
 
         setup_pg8000_close_event_listener(self.engine)
         if hasattr(db_config, "schema"):
             setup_search_path_event_listener(self.engine, db_config.schema)
 
         if test_connection:
-            self._test_connection()
+            try:
+                self._test_connection()
+            except Exception:
+                self.teardown()
+                raise
 
     def _test_connection(self):
         """Test the database connection."""
@@ -76,6 +106,8 @@ class BaseDB:
     def teardown(self):
         """Clean up resources."""
         self.engine.dispose()
+        if self.connector:
+            self.connector.close()
 
     @property
     def session(self):

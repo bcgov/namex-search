@@ -87,7 +87,11 @@ class NamexDB:  # pylint: disable=duplicate-code
                     "Either DB_CONNECTION_NAME (Cloud SQL Connector) or DB_HOST (TCP/bastion) must be set"
                 )
 
-            self.db = BaseDB(db_config, test_connection)
+            self.db = BaseDB(
+                db_config,
+                test_connection,
+                credentials_path=app.config["GOOGLE_APPLICATION_CREDENTIALS_NAMEX"],
+            )
 
         except Exception as e:
             app.logger.error(f"NameX db init failed: {e!s}")
