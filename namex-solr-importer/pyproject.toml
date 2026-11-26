@@ -7,13 +7,13 @@ authors = [
 ]
 license = {text = "BSD-3-clause"}
 readme = "README.md"
-requires-python = ">=3.13,<4"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "flask (>=3.1.1,<4.0.0)",
     "oracledb (>=2.0.0,<3.0.0)",
     "psycopg2-binary (>=2.9.10,<3.0.0)",
     "python-dotenv (>=1.1.0,<2.0.0)",
-    "namex-solr-api @ git+https://github.com/bcgov/namex-search.git@main#subdirectory=namex-solr-api",
+    "namex-solr-api @ git+https://github.com/bcgov/namex-search.git@feature/test-tcp-cloud-sql#subdirectory=namex-solr-api",
     "requests (>=2.32.3,<3.0.0)",
     "cloud-sql-python-connector (>=1.18.2,<2.0.0)",
     "pg8000 (>=1.31.2,<2.0.0)"

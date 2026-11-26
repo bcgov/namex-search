@@ -31,18 +31,16 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Create lear db connection.
+"""Create lear db connection."""
 
-These will get initialized by the application.
-"""
-
+from cloud_sql_connector import DBConfig, TCPDBConfig
 from flask import Flask
 
-from namex_solr_importer.services.base_db import BaseDB, DBConfig
+from namex_solr_importer.services.base_db import BaseDB
 
 
 class LearDB:  # pylint: disable=duplicate-code
-    """LEAR db connection."""
+    """LEAR db connection (auto-detects Cloud SQL Connector vs TCP mode)."""
 
     def __init__(self, app: Flask | None = None):
         self.db = None
@@ -50,22 +48,50 @@ class LearDB:  # pylint: disable=duplicate-code
             self.init_app(app)
 
     def init_app(self, app: Flask, test_connection=True):
-        """Initialize with option to skip connection test."""
+        """Initialize with option to skip connection test.
+
+        Auto-detects connection mode:
+        - If LEAR_DB_CONNECTION_NAME is set → Cloud SQL Connector mode (backward compatible)
+        - If LEAR_DB_HOST is set → TCP mode (bastion/SSH tunnel)
+        """
         try:
-            db_config = DBConfig(
-                instance_connection_name=app.config["LEAR_DB_CONNECTION_NAME"],
-                database=app.config["LEAR_DB_NAME"],
-                user=app.config["LEAR_DB_USER"],
-                enable_iam_auth=True,
-                credentials_path=app.config["GOOGLE_APPLICATION_CREDENTIALS_LEAR"],
-                password=app.config["LEAR_DB_PASSWORD"],
-                host=app.config["LEAR_DB_HOST"],
-                port=app.config["LEAR_DB_PORT"],
-            )
+            # Auto-detect mode based on what's configured
+            connection_name = app.config.get("LEAR_DB_CONNECTION_NAME")
+            db_host = app.config.get("LEAR_DB_HOST")
+
+            if connection_name:
+                # Cloud SQL Connector mode (original behavior - backward compatible)
+                db_config = DBConfig(
+                    instance_name=connection_name,
+                    database=app.config["LEAR_DB_NAME"],
+                    user=app.config["LEAR_DB_USER"],
+                    ip_type="public",
+                    enable_iam_auth=True,
+                    schema=app.config.get("LEAR_DB_SCHEMA", ""),
+                )
+            elif db_host:
+                # TCP mode (bastion/SSH tunnel with IAM token auth)
+                db_config = TCPDBConfig(
+                    database=app.config["LEAR_DB_NAME"],
+                    user=app.config["LEAR_DB_USER"],
+                    host=db_host,
+                    port=int(app.config.get("LEAR_DB_PORT", "5432")),
+                    enable_iam_auth=True,
+                    credentials_file=app.config.get(
+                        "GOOGLE_APPLICATION_CREDENTIALS_LEAR"
+                    ),
+                    schema=app.config.get("LEAR_DB_SCHEMA", ""),
+                )
+            else:
+                raise ValueError(
+                    "Either LEAR_DB_CONNECTION_NAME (Cloud SQL Connector) or LEAR_DB_HOST (TCP/bastion) must be set"
+                )
+
             self.db = BaseDB(db_config, test_connection)
 
         except Exception as e:
             app.logger.error(f"LEAR db init failed: {e!s}")
-            if self.db and self.db.connector:
-                self.db.connector.close()
+            if self.db:
+                self.db.teardown()
             raise
+

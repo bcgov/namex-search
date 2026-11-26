@@ -31,81 +31,51 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-"""Base db connection class."""
+"""Base db connection class using namex-solr-api cloud SQL utilities."""
 
-import os
-from dataclasses import dataclass
-
-from google.cloud.sql.connector import Connector
+from cloud_sql_connector import (
+    DBConfig,
+    TCPDBConfig,
+    setup_pg8000_close_event_listener,
+    setup_search_path_event_listener,
+)
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 
-@dataclass
-class DBConfig:
-    """Database configuration settings for IAM authentication."""
-
-    database: str
-    user: str  # IAM user email format: "user@project.iam"
-    enable_iam_auth: bool = True
-    credentials_path: str | None = None
-    instance_connection_name: str | None = None  # Format: "project:region:instance"
-    # NOTE: below is only used when not connecting via instance_connection_name
-    host: str | None = None
-    password: str | None = None
-    port: str | None = None
-
-
 class BaseDB:
-    """Database connection using IAM authentication."""
+    """Database connection wrapper supporting both Cloud SQL Connector and TCP modes."""
 
-    def __init__(self, db_config: DBConfig, test_connection=True):
-        """Initialize the db connection."""
-        if not db_config.instance_connection_name:
-            connect_string = f"postgresql://{db_config.user}:{db_config.password}@{db_config.host}:{db_config.port}/{db_config.database}"
-            self.engine = create_engine(connect_string)
+    def __init__(self, db_config: DBConfig | TCPDBConfig, test_connection=True):
+        """Initialize the db connection.
+
+        Args:
+            db_config: Database configuration (DBConfig for Cloud SQL Connector or TCPDBConfig for TCP)
+            test_connection: Whether to test the connection after initialization
+        """
+        engine_options = db_config.get_engine_options()
+
+        if isinstance(db_config, TCPDBConfig):
+            self.engine = create_engine("postgresql://", **engine_options)
         else:
-            # NOTE: GOOGLE_APPLICATION_CREDENTIALS is used during the connector init
-            # - this can be changed safely afterwards for other db connections using this base class
-            # - alternatively, this could be altered to get the google credentials ourselves via the path instead
-            #   and pass those into the connector init. This is relying on the default which relies on this env var during init
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = db_config.credentials_path
-            self.connector = Connector()
-            self.engine = create_engine(
-                "postgresql+pg8000://",
-                creator=lambda: self._get_iam_connection(db_config),
-                pool_size=5,
-                max_overflow=2,
-                pool_timeout=10,
-                pool_recycle=1800,
-                connect_args={"use_native_uuid": False},
-            )
+            self.engine = create_engine("postgresql+pg8000://", **engine_options)
+
+        setup_pg8000_close_event_listener(self.engine)
+        if hasattr(db_config, "schema"):
+            setup_search_path_event_listener(self.engine, db_config.schema)
 
         if test_connection:
             self._test_connection()
 
-    def _get_iam_connection(self, db_config: DBConfig):
-        """Establish connection using IAM authentication."""
-        return self.connector.connect(
-            db_config.instance_connection_name,
-            "pg8000",
-            ip_type="public",
-            db=db_config.database,
-            user=db_config.user,
-            enable_iam_auth=db_config.enable_iam_auth,
-        )
-
     def _test_connection(self):
-        """Test the database connection using proper SQLAlchemy text() construct."""
+        """Test the database connection."""
         with self.engine.connect() as conn:
-            # Wrap the SQL string in text() for proper execution
             result = conn.execute(text("SELECT version()")).fetchone()
             print(f"Connection successful. Database version: {result[0]}")  # noqa: T201
 
     def teardown(self):
         """Clean up resources."""
-        if self.connector:
-            self.connector.close()
+        self.engine.dispose()
 
     @property
     def session(self):
