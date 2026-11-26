@@ -20,8 +20,11 @@ from namex_solr_api.services.namex_solr.utils import (
     apply_embedded_reserved_retrieve,
     apply_initials_group_exact_highlights,
     apply_leading_wildcard_rank,
+    build_identity_descriptive_boosts,
     candidate_synonym_highlight_tokens,
     classify_conflict_bucket,
+    fit_phonetic_page,
+    glued_exact_highlights,
     hyphen_glued_tokens,
     keep_family_synonym_highlights,
     mark_wildcard_constant_score_boosts,
@@ -30,10 +33,14 @@ from namex_solr_api.services.namex_solr.utils import (
     normalize_nr_num,
     outer_wildcard_constant_score_terms,
     parse_conflict_wildcard,
+    pattern_search_terms,
     prep_query_str_namex,
+    promote_adjacent_patterns,
     rank_conflict_docs,
     remove_designation_tokens,
+    resolve_identity_descriptive,
     retrieve_synonym_families_by_term,
+    select_identity_descriptive_docs,
     visible_conflict_bucket,
 )
 
@@ -84,6 +91,9 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             PCField.CORP_NUM_Q.value: prep_query_str_namex(query_json.get(PCField.CORP_NUM.value, "")),
             PCField.NR_NUM_Q.value: prep_query_str_namex(normalized_nr_num)
         }
+        distinctive, descriptive = resolve_identity_descriptive(
+            query_json.get("distinctive", ""), query_json.get("descriptive", "")
+        )
         # set faceted category params
         categories_json: dict = request_json.get("categories", {})
         # TODO: verify these states
@@ -178,6 +188,11 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             constant_score_terms=constant_score_terms,
             stemmed_terms_map=stems_by_term,
         )
+        if distinctive:
+            params = replace(
+                params,
+                full_query_boosts=[*full_query_boosts, *build_identity_descriptive_boosts(solr, params, distinctive, descriptive)],
+            )
 
         params = apply_embedded_reserved_retrieve(params, solr, strict, start)
         results, solr_highlighting = _conflict_solr_search(params, strict, max_highlighted_docs)
@@ -245,6 +260,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 params.query["value"].split(),
                 result.get("name") or "",
             )
+            exact_highlights += glued_exact_highlights(params.query["value"], result.get("name") or "")
             if stem_highlights := highlight_raw.get(NameField.NAME_Q_STEM_HIGHLIGHT.value, []):
                 stem_highlights = [x for x in split_highlights(stem_highlights) if x not in (exact_highlights)]
             if phonetic_highlights := highlight_raw.get(NameField.NAME_Q_PHON_EN.value, []):
@@ -281,7 +297,7 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
                 "name": result["name"].upper(),
                 "bucket": bucket,
                 "highlighting": {
-                    "exact": list(set(exact_highlights)),
+                    "exact": sorted(set(exact_highlights), key=lambda term: (-len(term), term)),
                     "stems": list(set(stem_highlights)),
                     "phonetic": list(set(phonetic_highlights)),
                     "synonyms": list(set(synonym_highlights))
@@ -296,6 +312,16 @@ def possible_conflict_names():  # noqa: PLR0912, PLR0915
             doc_token_stems,
             glued_tokens,
         )
+        if distinctive:
+            built_docs = docs
+            docs, other_docs = select_identity_descriptive_docs(
+                docs, distinctive, descriptive, families_by_term, None, query_stems_by_term, doc_token_stems
+            )
+            if start == 0 and (pattern_terms := pattern_search_terms(distinctive, descriptive)):
+                docs = promote_adjacent_patterns(docs, built_docs, pattern_terms, query_stems_by_term, doc_token_stems)
+            docs = fit_phonetic_page(docs, rows)
+            shown = {doc["id"] for doc in docs}
+            docs += [doc for doc in other_docs if doc["id"] not in shown]
         if wildcard.leading and not wildcard.trailing and start == 0:
             docs = apply_leading_wildcard_rank(docs, value)
         # save search in the db

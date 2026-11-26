@@ -12,7 +12,10 @@ from .analysis_helpers import (
 from .conflict_bucket import (
     classify_conflict_bucket,
     cover_query_token,
+    fit_phonetic_page,
+    promote_adjacent_patterns,
     rank_conflict_docs,
+    select_identity_descriptive_docs,
     visible_conflict_bucket,
 )
 from .formatting_helpers import (
@@ -27,6 +30,7 @@ from .formatting_helpers import (
     candidate_letter_tokens,
     conflict_match_prep_terms,
     distinctive_coverage_terms,
+    glued_exact_highlights,
     hyphen_glued_tokens,
     initials_group_runs,
     mark_wildcard_constant_score_boosts,
@@ -39,14 +43,17 @@ from .formatting_helpers import (
     reserved_coverage_params,
     reserved_glued_concat_query,
     reserved_prefix_params,
+    resolve_identity_descriptive,
     should_run_reserved_coverage,
     strip_trailing_designations,
 )
 from .namex_search_helper import (
     apply_embedded_reserved_retrieve,
+    build_identity_descriptive_boosts,
     embed_reserved_retrieve_query,
     join_embedded_conflict_query,
     namex_search,
+    pattern_search_terms,
 )
 from .phonetic import keep_phonetic_match
 from .synonym_helpers import (

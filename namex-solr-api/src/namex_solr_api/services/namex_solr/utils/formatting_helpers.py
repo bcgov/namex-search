@@ -189,20 +189,39 @@ def conflict_match_prep_terms(query_value: str, designations: list[str] | None =
     return remove_designation_tokens(prepared, designations).split()
 
 
+def identity_term_groups(terms: list[str]) -> list[list[str]]:
+    groups: list[list[str]] = []
+    index = 0
+    while index < len(terms):
+        if len(terms[index]) == 1 and terms[index].isalpha():
+            end = index + 1
+            while end < len(terms) and len(terms[end]) == 1 and terms[end].isalpha():
+                end += 1
+            if end - index >= 2:  # noqa: PLR2004
+                groups.append(terms[index:end])
+                index = end
+                continue
+        groups.append([terms[index]])
+        index += 1
+    return groups
+
+
+def _without_skip_words(terms: list[str]) -> list[str]:
+    return [term for term in terms if term.lower() not in SYNONYM_SKIP_WORDS]
+
+
+def resolve_identity_descriptive(distinctive: str, descriptive: str) -> tuple[list[str], list[str]]:
+    """Search terms from the Distinctive and Descriptive boxes."""
+    identity = _without_skip_words(conflict_match_prep_terms(join_hyphen_compounds(distinctive)))
+    identity_set = set(identity)
+    described = _without_skip_words(
+        [term for term in conflict_match_prep_terms(descriptive) if term not in identity_set]
+    )
+    return identity, described
+
+
 def initials_group_runs(terms: list[str]) -> list[str]:
-    runs: list[str] = []
-    i = 0
-    while i < len(terms):
-        if len(terms[i]) == 1 and terms[i].isalpha():
-            j = i + 1
-            while j < len(terms) and len(terms[j]) == 1 and terms[j].isalpha():
-                j += 1
-            if j - i >= 2:  # noqa: PLR2004
-                runs.append("".join(terms[i:j]))
-            i = j
-        else:
-            i += 1
-    return runs
+    return ["".join(group) for group in identity_term_groups(terms) if len(group) > 1]
 
 
 def candidate_letter_tokens(name: str) -> set[str]:
@@ -339,6 +358,14 @@ def hyphen_glued_tokens(query_value: str) -> list[str]:
             seen.add(token)
             glued.append(token)
     return glued
+
+
+def glued_exact_highlights(query_value: str, name: str) -> list[str]:
+    """Name words that are 2+ consecutive search words joined together (WEST COAST -> WESTCOAST)."""
+    words = [word.upper() for word in (query_value or "").split()]
+    name_words = set(re.findall(r"[A-Z0-9']+", (name or "").upper()))
+    joined = ("".join(words[start:end]) for start in range(len(words)) for end in range(start + 2, len(words) + 1))
+    return [word for word in joined if word in name_words]
 
 
 def build_hyphen_glued_boosts(query_value: str) -> list[dict]:
@@ -602,3 +629,13 @@ def apply_leading_wildcard_rank(docs: list[dict], query: str) -> list[dict]:
     Does not drop documents. Only used for leading-only *TERM on start=0.
     """
     return sorted(docs, key=lambda doc: leading_wildcard_sort_key(doc.get("name") or "", query))
+
+
+def join_hyphen_compounds(query: str) -> str:
+    def replace(match: re.Match) -> str:
+        token = re.sub(r"[\s-]+", "", match.group(0))
+        if len(token) >= GLUED_FIRST_MIN_LEN:
+            return token
+        return match.group(0)
+
+    return _HYPHEN_CLUSTER.sub(replace, query or "")

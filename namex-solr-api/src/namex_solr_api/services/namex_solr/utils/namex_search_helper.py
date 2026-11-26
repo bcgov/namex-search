@@ -3,12 +3,15 @@ import re
 from dataclasses import replace
 
 from namex_solr_api.services.base_solr.utils import QueryParams
+from namex_solr_api.services.base_solr.utils.query_builder import QueryBuilder
 from namex_solr_api.services.namex_solr import NamexSolr
 from namex_solr_api.services.namex_solr.doc_models import NameField, PCField
 
 from .add_category_filters import add_category_filters
 from .analysis_helpers import analyze_stemmed_agro_tokens
 from .formatting_helpers import (
+    GLUED_FIRST_MIN_LEN,
+    identity_term_groups,
     reserved_coverage_params,
     reserved_glued_concat_query,
     reserved_prefix_params,
@@ -98,6 +101,177 @@ def apply_embedded_reserved_retrieve(params: QueryParams, solr: NamexSolr, is_st
     if fat_query := embed_reserved_retrieve_query(params, solr, is_strict, start):
         return replace(params, override_query=fat_query)
     return params
+
+
+IDENTITY_DESCRIPTIVE_BOOST = 10_000
+IDENTITY_FULL_BOOST = 1_000_000
+_MAX_PATTERN_WORDS = 5
+
+
+def _widened_prefix(lead: str) -> str:
+    if len(lead) >= 5 and lead.endswith("Y"):  # noqa: PLR2004
+        return f"{lead[:-1]}*"
+    if len(lead) >= 5 and lead.endswith("IES"):  # noqa: PLR2004
+        return f"{lead[:-3]}*"
+    if len(lead) >= 5 and lead.endswith("S") and not lead.endswith("SS"):  # noqa: PLR2004
+        return f"{lead[:-1]}*"
+    return f"{lead}*"
+
+
+def build_loose_first_query(distinctive: list[str]) -> str | None:
+    groups = identity_term_groups(distinctive)
+    if not groups or len(groups[0]) != 1:
+        return None
+    term = groups[0][0]
+    fuzzy = QueryBuilder.get_fuzzy_str(term, 1, 2)
+    if not fuzzy:
+        return None
+    return f"{NameField.NAME_Q.value}:{term}{fuzzy}"
+
+
+def _group_clauses(solr: NamexSolr, params: QueryParams, groups: list[list[str]], with_synonym: bool) -> list[str]:
+    builder = solr.query_builder
+    stems_by_term = params.stemmed_terms_map or {}
+    constant = frozenset(params.constant_score_terms or [])
+    words = [group[0] for group in groups if len(group) == 1]
+    stems = [stems_by_term.get(term, term) for term in words]
+    built = []
+    word_index = 0
+    synonym_info: dict = {}
+    for group in groups:
+        if len(group) >= 2:  # noqa: PLR2004
+            glued = "".join(group)
+            built.append(f"{NameField.NAME_Q_EXACT.value}:{glued} OR {NameField.NAME_Q.value}:{glued}")
+            continue
+        clause = builder.build_term_clause(
+            group[0],
+            params.query_fields,
+            params.query_boost_fields,
+            params.query_fuzzy_fields,
+            True,
+            constant,
+        )
+        if with_synonym:
+            clause = builder.build_term_synonym_clauses(
+                clause,
+                words,
+                word_index,
+                synonym_info,
+                params.query_synonym_fields,
+                True,
+                params.query_boost_fields,
+                stems,
+                True,
+                constant,
+            )
+        built.append(clause)
+        word_index += 1
+    return built
+
+
+def _described_clause(solr: NamexSolr, params: QueryParams, descriptive: list[str]) -> str:
+    described_clauses = [clause for clause in _group_clauses(solr, params, identity_term_groups(descriptive), True) if clause]
+    described = " OR ".join(f"({clause})" for clause in described_clauses)
+    if len(described_clauses) > 1:
+        described = f"({described})"
+    return described
+
+
+def _first_word_sound(word: str) -> str:
+    """Sound-alike of the name's FIRST word only; Solr analyzes the word with the phonetic field itself."""
+    term = "".join(ch for ch in word if ch.isalnum())
+    span = f'<SpanFirst end=\\"1\\"><SpanOrTerms fieldName=\\"{NameField.NAME_Q_PHON_EN.value}\\">{term}</SpanOrTerms></SpanFirst>'
+    return f'_query_:"{{!xmlparser}}{span}"'
+
+
+def build_phonetic_first_queries(
+    solr: NamexSolr,
+    params: QueryParams,
+    distinctive: list[str],
+    descriptive: list[str],
+) -> tuple[str | None, str | None]:
+    groups = identity_term_groups(distinctive)
+    if not groups or len(groups[0]) != 1:
+        return None, None
+    phonetic = _first_word_sound(groups[0][0])
+    described = _described_clause(solr, params, descriptive)
+    described_query = f"({phonetic}) AND {described}" if described else None
+    return phonetic, described_query
+
+
+def build_identity_descriptive_query(
+    solr: NamexSolr,
+    params: QueryParams,
+    distinctive: list[str],
+    descriptive: list[str],
+) -> str | None:
+    identity_groups = identity_term_groups(distinctive)
+    if not identity_groups:
+        return None
+    identity_clauses = _group_clauses(solr, params, identity_groups, False)
+    if identity_groups and len(identity_groups[0]) == 1:
+        term = identity_groups[0][0]
+        lead = "".join(ch for ch in term.upper() if ch.isalnum())
+        broad = identity_clauses[0]
+        if lead:
+            anchored = f"name:{_widened_prefix(lead)} AND ({broad})"
+            whole = f"name:{lead}\\ *"
+            pieces = [f"(({whole})^{IDENTITY_FULL_BOOST})", f"({anchored})"]
+            if len(lead) >= GLUED_FIRST_MIN_LEN:
+                pieces.append(f"(({NameField.NAME_Q_EXACT.value}:{lead.lower()})^{IDENTITY_FULL_BOOST})")
+            identity_clauses[0] = " OR ".join(pieces)
+    first = f"({identity_clauses[0]})" if identity_clauses else ""
+    later = " AND ".join(f"({clause})" for clause in identity_clauses[1:] if clause)
+    identity = f"{first} AND {later}" if later else first
+    if not identity:
+        return None
+    described = _described_clause(solr, params, descriptive)
+    if not later:
+        if not described:
+            single = f"({identity})"
+            loose = build_loose_first_query(distinctive)
+            return f"{single} OR ({loose})" if loose else single
+        return f"({identity}) OR (({identity} AND {described})^{IDENTITY_DESCRIPTIVE_BOOST})"
+    full_desc = IDENTITY_FULL_BOOST * IDENTITY_DESCRIPTIVE_BOOST
+    parts = [f"({first})", f"(({first} AND {later})^{IDENTITY_FULL_BOOST})"]
+    if described:
+        parts.append(f"(({first} AND {described})^{IDENTITY_DESCRIPTIVE_BOOST})")
+        parts.append(f"(({first} AND {later} AND {described})^{full_desc})")
+    return " OR ".join(parts)
+
+
+def pattern_search_terms(distinctive: list[str], descriptive: list[str]) -> list[str]:
+    """The distinctive and descriptive words, when there are two or more."""
+    words = [word for word in (*distinctive, *descriptive) if word]
+    if len(words) < 2:  # noqa: PLR2004
+        return []
+    return words
+
+
+def build_identity_descriptive_boosts(
+    solr: NamexSolr,
+    params: QueryParams,
+    distinctive: list[str],
+    descriptive: list[str],
+) -> list[dict]:
+    """Identity, sound-alike and word-order clauses as boosts on the conflict query."""
+    boosts = []
+    if identity_query := build_identity_descriptive_query(solr, params, distinctive, descriptive):
+        boosts.append({"term_clauses": [identity_query], "boost": 1})
+    sound_query, described_sound = build_phonetic_first_queries(solr, params, distinctive, descriptive)
+    if sound_query:
+        boosts.append({"term_clauses": [sound_query], "boost": IDENTITY_DESCRIPTIVE_BOOST})
+    if described_sound:
+        boosts.append({"term_clauses": [described_sound], "boost": IDENTITY_FULL_BOOST})
+    words = pattern_search_terms(distinctive, descriptive)
+    if 2 <= len(words) <= _MAX_PATTERN_WORDS:  # noqa: PLR2004
+        boosts.append({
+            "field": NameField.NAME_Q,
+            "value": " ".join(words),
+            "fuzzy": 2 * len(words),
+            "boost": IDENTITY_DESCRIPTIVE_BOOST,
+        })
+    return boosts
 
 
 def namex_search(params: QueryParams, solr: NamexSolr, is_name_search: bool, is_strict: bool = True):

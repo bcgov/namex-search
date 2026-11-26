@@ -1,3 +1,5 @@
+from itertools import permutations
+
 from namex_solr_api.config import Config
 from namex_solr_api.services.base_solr.utils.formatting_helpers import prep_query_str
 from namex_solr_api.services.base_solr.utils.query_builder import (
@@ -8,9 +10,16 @@ from namex_solr_api.services.base_solr.utils.query_builder import (
 from .formatting_helpers import (
     GLUED_FIRST_MIN_LEN,
     distinctive_coverage_terms,
+    identity_term_groups,
     normalize_conflict_initials,
 )
-from .phonetic import keep_phonetic_match, replace_special_leading_sounds
+from .phonetic import (
+    first_vowels,
+    has_leading_vowel,
+    keep_phonetic_match,
+    primary_metaphone,
+    replace_special_leading_sounds,
+)
 from .synonym_helpers import keep_family_synonym_highlights, name_surface_tokens
 
 BUCKET_SYNONYM = "synonym"
@@ -141,9 +150,51 @@ def _phonetic_distance_allowed(query: str, name_token: str) -> int:
 
 def _real_phonetic_match(name_token: str, query: str) -> bool:
     if not keep_phonetic_match(name_token, query):
-        return False
+        return _metaphone_match(name_token, query)
     distance = _edit_distance(_ck_fold(name_token), _ck_fold(query))
-    return distance <= _phonetic_distance_allowed(query, name_token)
+    return distance <= _phonetic_distance_allowed(query, name_token) or _metaphone_match(name_token, query)
+
+
+def _phonetic_fold(word: str) -> str:
+    raw = "".join(char for char in (word or "").upper() if "A" <= char <= "Z")
+    folded: list[str] = []
+    index = 0
+    while index < len(raw):
+        if raw.startswith("PH", index):
+            piece = "F"
+            index += 2
+        else:
+            piece = {"V": "F", "C": "K", "Z": "S"}.get(raw[index], raw[index])
+            index += 1
+        if not folded or folded[-1] != piece:
+            folded.append(piece)
+    return "".join(folded)
+
+
+def _one_extra_vowel(left: str, right: str) -> bool:
+    longer, shorter = (left, right) if len(left) > len(right) else (right, left)
+    if len(longer) != len(shorter) + 1:
+        return False
+    return any(
+        char in "AEIOU" and f"{longer[:index]}{longer[index + 1:]}" == shorter
+        for index, char in enumerate(longer)
+    )
+
+
+def _metaphone_match(name_token: str, query: str) -> bool:
+    """Same-sound words the first-sounds check misses (PHONE~FONE); close spellings are left to the fuzzy check."""
+    word = name_token.replace("'", "")
+    if not word.isalpha() or not any(vowel in word.upper() for vowel in "AEIOUY"):
+        return False
+    name_code = primary_metaphone(name_token)
+    if not name_code or name_code != primary_metaphone(query) or _fuzzy_cover(query, [name_token]):
+        return False
+    left, right = _phonetic_fold(name_token), _phonetic_fold(query)
+    if len(name_code) < 4:  # noqa: PLR2004
+        return left == right or _one_extra_vowel(left, right)
+    if left[:1] != right[:1] or first_vowels(left, has_leading_vowel(left)) != first_vowels(right, has_leading_vowel(right)):
+        return False
+    return _edit_distance(left, right) <= 3  # noqa: PLR2004
 
 
 def _fuzzy_cover(query: str, name_tokens: list[str]) -> bool:
@@ -623,3 +674,327 @@ def classify_conflict_bucket(  # noqa: PLR0913
     if dropped:
         return BUCKET_DROP
     return BUCKET_PHONETIC if saw_phonetic else BUCKET_SYNONYM
+
+
+_FIRST_QUALITY = {_COVER_EXACT: 2, _COVER_STEM: 2, _COVER_PHONETIC: 1, _COVER_FUZZY: 1}
+_DESC_QUALITY = {_COVER_EXACT: 3, _COVER_STEM: 2, _COVER_FAMILY: 1}
+_DESC_DIRECT = frozenset({_COVER_EXACT, _COVER_STEM, _COVER_FAMILY})
+
+
+def _identity_group_cover(  # noqa: PLR0913
+    group: list[str],
+    name_tokens: list[str],
+    sound_tokens: list[str],
+    family_by_term: dict[str, set[str]],
+    family_stems_by_term: dict[str, set[str]],
+    query_stems_by_term: dict[str, set[str]],
+    name_token_stems: dict[str, list[str]] | None,
+) -> str | None:
+    if len(group) >= 2:  # noqa: PLR2004
+        return _cover_for_run(
+            group,
+            name_tokens,
+            family_by_term,
+            family_stems_by_term,
+            query_stems_by_term,
+            sound_tokens,
+            name_token_stems,
+        )
+    cover = cover_query_token(
+        group[0],
+        name_tokens,
+        set(),
+        set(),
+        _sets_for_term(query_stems_by_term, group[0]),
+        [],
+        name_token_stems,
+    )
+    if cover is None and any(_real_phonetic_match(token, group[0]) for token in sound_tokens):
+        return _COVER_PHONETIC
+    if cover is None and _fuzzy_cover(group[0], sound_tokens):
+        return _COVER_FUZZY
+    return cover
+
+
+def _descriptive_group_cover(  # noqa: PLR0913
+    group: list[str],
+    name_tokens: list[str],
+    family_by_term: dict[str, set[str]],
+    family_stems_by_term: dict[str, set[str]],
+    query_stems_by_term: dict[str, set[str]],
+    name_token_stems: dict[str, list[str]] | None,
+) -> str | None:
+    if len(group) >= 2:  # noqa: PLR2004
+        cover = _cover_for_run(
+            group,
+            name_tokens,
+            family_by_term,
+            family_stems_by_term,
+            query_stems_by_term,
+            name_tokens,
+            name_token_stems,
+        )
+        return cover if cover in _DESC_DIRECT else None
+    query = group[0].lower()
+    family = _sets_for_term(family_by_term, group[0]) | {query}
+    cover = cover_query_token(
+        group[0],
+        name_tokens,
+        family,
+        _sets_for_term(family_stems_by_term, group[0]),
+        _sets_for_term(query_stems_by_term, group[0]),
+        name_tokens,
+        name_token_stems,
+    )
+    return cover if cover in _DESC_DIRECT else None
+
+
+def _leading_concat_exact(query: str, name_tokens: list[str]) -> bool:
+    target = (query or "").lower()
+    if len(target) < GLUED_FIRST_MIN_LEN or not name_tokens:
+        return False
+    acc = ""
+    for used, token in enumerate(name_tokens, start=1):
+        acc += token.lower().strip(".")
+        if used >= 2 and acc == target:  # noqa: PLR2004
+            return True
+        if len(acc) >= len(target):
+            return False
+    return False
+
+
+def _whole_first_word(group: list[str], name_tokens: list[str]) -> int:
+    if not name_tokens:
+        return 0
+    if len(group) >= 2:  # noqa: PLR2004
+        return int(_initials_run_covered(group, name_tokens[: len(group)]))
+    if name_tokens[0].lower() == group[0].lower():
+        return 1
+    return int(_leading_concat_exact(group[0], name_tokens))
+
+
+def _first_word_leads(group: list[str], name_tokens: list[str], cover: str | None) -> int:
+    if cover not in _COVER_STRONG or not name_tokens:
+        return 0
+    if len(group) >= 2:  # noqa: PLR2004
+        return int(_initials_run_covered(group, name_tokens[: len(group)]))
+    first = name_tokens[0]
+    return int(first.lower() == group[0].lower() or _tokens_share_stem(group[0], first))
+
+
+def select_identity_descriptive_docs(  # noqa: PLR0913
+    docs: list[dict],
+    distinctive: list[str],
+    descriptive: list[str],
+    family_by_term: dict[str, set[str]] | None = None,
+    family_stems_by_term: dict[str, set[str]] | None = None,
+    query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Return (names led by the first distinctive word, every other name); nothing is dropped."""
+    identity_groups = identity_term_groups(distinctive)
+    descriptive_groups = identity_term_groups(descriptive)
+    if not identity_groups:
+        return docs, []
+    family_by_term = family_by_term or {}
+    family_stems_by_term = family_stems_by_term or {}
+    query_stems_by_term = query_stems_by_term or {}
+    query_terms = {term.lower() for group in [*identity_groups, *descriptive_groups] for term in group}
+    ranked: list[tuple] = []
+    others: list[tuple] = []
+    for doc in docs:
+        name_tokens = _usable_name_tokens(doc.get("name") or "", query_terms)
+        identity_covers = []
+        for index, group in enumerate(identity_groups):
+            if index == 0 and len(group) == 1 and _leading_concat_exact(group[0], name_tokens):
+                identity_covers.append(_COVER_EXACT)
+                continue
+            leading = name_tokens[:1] if index == 0 and len(group) == 1 else name_tokens
+            identity_covers.append(
+                _identity_group_cover(
+                    group,
+                    leading,
+                    leading,
+                    family_by_term,
+                    family_stems_by_term,
+                    query_stems_by_term,
+                    name_token_stems,
+                )
+            )
+        descriptive_covers = [
+            _descriptive_group_cover(
+                group,
+                name_tokens,
+                family_by_term,
+                family_stems_by_term,
+                query_stems_by_term,
+                name_token_stems,
+            )
+            for group in descriptive_groups
+        ]
+        if identity_covers[0] is None:
+            others.append((doc, identity_covers, descriptive_covers, name_tokens))
+            continue
+        described = any(cover in _DESC_DIRECT for cover in descriptive_covers)
+        if identity_covers[0] == _COVER_PHONETIC:
+            doc["bucket"] = BUCKET_PHONETIC
+            if described:
+                doc["_phonetic_desc"] = True
+        elif identity_covers[0] == _COVER_FUZZY:
+            doc["bucket"] = BUCKET_SYNONYM
+        elif identity_covers[0] in _COVER_STRONG and (
+            described or (len(identity_covers) > 1 and all(cover is not None for cover in identity_covers[1:]))
+        ):
+            doc["_keep"] = True
+        ranked.append((doc, identity_covers, descriptive_covers, name_tokens))
+
+    def sort_key(item: tuple) -> tuple[int, int, int, int, int, int, int, int, int]:
+        _doc, identity_covers, descriptive_covers, name_tokens = item
+        covered = [cover for cover in descriptive_covers if cover is not None]
+        later_hits = sum(cover is not None for cover in identity_covers[1:])
+        described_tokens = sum(
+            len(group) for group, cover in zip(descriptive_groups, descriptive_covers, strict=True) if cover
+        )
+        leftover = len(name_tokens) - 1 - later_hits - described_tokens
+        return (
+            later_hits,
+            _whole_first_word(identity_groups[0], name_tokens),
+            _FIRST_QUALITY.get(identity_covers[0], 0),
+            _first_word_leads(identity_groups[0], name_tokens, identity_covers[0]),
+            len(covered),
+            int(bool(covered) and leftover <= 0),
+            max((_DESC_QUALITY.get(cover, 0) for cover in covered), default=0),
+            -max(leftover, 0),
+            sum(_FIRST_QUALITY.get(cover, 0) for cover in identity_covers[1:]),
+        )
+
+    ranked.sort(key=sort_key, reverse=True)
+    return [item[0] for item in ranked], [item[0] for item in others]
+
+
+def _pattern_word_match(
+    query: str,
+    token: str,
+    query_stems_by_term: dict[str, set[str]] | None,
+    name_token_stems: dict[str, list[str]] | None,
+) -> str | None:
+    word = (query or "").lower()
+    surface = (token or "").lower().strip(".")
+    if not word or not surface:
+        return None
+    if word == surface:
+        return _COVER_EXACT
+    if _light_stem(word) == _light_stem(surface):
+        return _COVER_STEM
+    query_stems = {stem.lower() for stem in (query_stems_by_term or {}).get(word, set()) if stem}
+    token_stems = {stem.lower() for stem in (name_token_stems or {}).get(surface, []) if stem}
+    if query_stems and token_stems and query_stems & token_stems:
+        return _COVER_STEM
+    return None
+
+
+def _rearranged_quality(
+    words: list[str],
+    window: list[str],
+    query_stems_by_term: dict[str, set[str]] | None,
+    name_token_stems: dict[str, list[str]] | None,
+) -> str | None:
+    if all(
+        _pattern_word_match(word, token, query_stems_by_term, name_token_stems)
+        for word, token in zip(words, window, strict=True)
+    ):
+        return None
+    best = None
+    for order in permutations(words):
+        qualities = [
+            _pattern_word_match(word, token, query_stems_by_term, name_token_stems)
+            for word, token in zip(order, window, strict=True)
+        ]
+        if not all(qualities):
+            continue
+        quality = _COVER_EXACT if all(item == _COVER_EXACT for item in qualities) else _COVER_STEM
+        if quality == _COVER_EXACT:
+            return quality
+        best = quality
+    return best
+
+
+def _adjacent_pattern_rank(
+    words: list[str],
+    name: str,
+    query_stems_by_term: dict[str, set[str]] | None,
+    name_token_stems: dict[str, list[str]] | None,
+) -> tuple[int, int, int] | None:
+    tokens = _usable_name_tokens(name, {word.lower() for word in words})
+    width = len(words)
+    outside = len(tokens) - width
+    if width < 2 or outside < 0 or outside > 1:  # noqa: PLR2004
+        return None
+    quality = _rearranged_quality(
+        words,
+        tokens[:width],
+        query_stems_by_term,
+        name_token_stems,
+    )
+    if quality is None:
+        return None
+    return (1, int(quality == _COVER_EXACT), -outside)
+
+
+def promote_adjacent_patterns(
+    forward: list[dict],
+    candidates: list[dict],
+    distinctive: list[str],
+    query_stems_by_term: dict[str, set[str]] | None = None,
+    name_token_stems: dict[str, list[str]] | None = None,
+) -> list[dict]:
+    """Place a leading rearrangement, with at most one following word, ahead of the forward list."""
+    words = [word for word in distinctive if word]
+    ranked: list[tuple[tuple[int, int, int], dict]] = []
+    for doc in candidates:
+        rank = _adjacent_pattern_rank(words, doc.get("name") or "", query_stems_by_term, name_token_stems)
+        if rank is not None:
+            ranked.append((rank, doc))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    seen: set[str] = set()
+    top: list[dict] = []
+    for _rank, doc in ranked:
+        record_id = doc.get("id")
+        if not record_id or record_id in seen:
+            continue
+        seen.add(record_id)
+        top.append({**doc, "bucket": BUCKET_SYNONYM, "_keep": True})
+    rest = []
+    for doc in forward:
+        record_id = doc.get("id")
+        if not record_id or record_id in seen:
+            continue
+        seen.add(record_id)
+        rest.append(doc)
+    return top + rest
+
+
+def fit_phonetic_page(docs: list[dict], rows: int) -> list[dict]:
+    """Keep a described sound-alike, and an ordinary one only when a seat remains."""
+    protected = []
+    phonetic_desc = []
+    displaceable = []
+    phonetic_only = []
+    for doc in docs:
+        described_sound = doc.pop("_phonetic_desc", False)
+        keep = doc.pop("_keep", False)
+        if doc.get("bucket") == BUCKET_PHONETIC:
+            (phonetic_desc if described_sound else phonetic_only).append(doc)
+        elif keep:
+            protected.append(doc)
+        else:
+            displaceable.append(doc)
+    if rows <= 0:
+        return protected + phonetic_desc + displaceable + phonetic_only
+    chosen: list[dict] = []
+    for group in (protected, phonetic_desc, displaceable, phonetic_only):
+        room = rows - len(chosen)
+        if room <= 0:
+            break
+        chosen.extend(group[:room])
+    return chosen

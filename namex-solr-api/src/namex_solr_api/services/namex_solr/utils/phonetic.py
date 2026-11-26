@@ -108,3 +108,117 @@ def keep_phonetic_match(word, query):
         word_sound = word_first_consonant + word_first_vowels
 
     return word_sound == query_sound
+
+
+_METAPHONE_CODE_LEN = 8
+
+
+def primary_metaphone(word: str) -> str:  # noqa: PLR0912, PLR0915
+    """Primary Double Metaphone code. Alternate codes are not produced."""
+    raw = "".join(char for char in (word or "").upper() if "A" <= char <= "Z")
+    if not raw:
+        return ""
+    padded = f"{raw}   "
+    code: list[str] = []
+    index = 1 if raw.startswith(("GN", "KN", "PN", "WR", "PS")) else 0
+
+    def add(value: str) -> None:
+        if value and len("".join(code)) < _METAPHONE_CODE_LEN:
+            code.append(value)
+
+    while index < len(raw) and len("".join(code)) < _METAPHONE_CODE_LEN:
+        char = padded[index]
+        if index > 0 and char == padded[index - 1] and char != "C":
+            index += 1
+            continue
+        nxt = padded[index + 1]
+        if char in "AEIOU":
+            if index == 0:
+                add(char)
+            index += 1
+        elif char == "B":
+            add("P")
+            index += 1
+        elif char == "C":
+            if nxt == "H":
+                add("X")
+                index += 2
+            elif nxt in "IEY":
+                add("S")
+                index += 1
+            else:
+                add("K")
+                index += 2 if nxt == "C" else 1
+        elif char == "D":
+            if padded[index:index + 2] == "DG" and padded[index + 2] in "IEY":
+                add("J")
+                index += 3
+            else:
+                add("T")
+                index += 1
+        elif char == "F":
+            add("F")
+            index += 1
+        elif char == "G":
+            if nxt == "H":
+                add("" if index > 0 else "K")
+                index += 2
+            elif nxt in "IEY":
+                add("J")
+                index += 1
+            else:
+                add("K")
+                index += 1
+        elif char == "H":
+            if nxt in "AEIOU" and (index == 0 or padded[index - 1] not in "AEIOU"):
+                add("H")
+            index += 1
+        elif char in "JKLMN":
+            add(char)
+            index += 1
+        elif char == "P":
+            if nxt == "H":
+                add("F")
+                index += 2
+            else:
+                add("P")
+                index += 1
+        elif char == "Q":
+            add("K")
+            index += 1
+        elif char == "R":
+            add("R")
+            index += 1
+        elif char == "S":
+            if nxt == "H" or padded[index:index + 3] in {"SIO", "SIA"}:
+                add("X")
+                index += 2 if nxt == "H" else 3
+            else:
+                add("S")
+                index += 1
+        elif char == "T":
+            if padded[index:index + 3] in {"TIA", "TIO", "TCH"}:
+                add("X")
+                index += 3
+            elif nxt == "H":
+                add("0")
+                index += 2
+            else:
+                add("T")
+                index += 1
+        elif char == "V":
+            add("F")
+            index += 1
+        elif char in "WY":
+            if nxt in "AEIOU":
+                add("A")
+            index += 1
+        elif char == "X":
+            add("KS")
+            index += 1
+        elif char == "Z":
+            add("S")
+            index += 1
+        else:
+            index += 1
+    return "".join(code)[:_METAPHONE_CODE_LEN]
