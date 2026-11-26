@@ -14,6 +14,15 @@ poetry install
 ### Configure the .env
 (see .env.sample)
 
+Database connections use Cloud SQL Connector when `DATABASE_CONNECTION_NAME`
+(or `LEAR_DATABASE_CONNECTION_NAME`) is set. Otherwise, host connections use
+the configured database password as before. To use IAM authentication over a
+TCP tunnel instead, set `DATABASE_TCP_IAM_AUTH=True` (or
+`LEAR_DATABASE_TCP_IAM_AUTH=True`), set the corresponding host and port,
+and leave the corresponding connection name unset. The corresponding
+`GOOGLE_APPLICATION_CREDENTIALS_NAMEX` or `GOOGLE_APPLICATION_CREDENTIALS_LEAR`
+must identify the IAM database user.
+
 ```bash
 eval $(poetry env activate)
 ```

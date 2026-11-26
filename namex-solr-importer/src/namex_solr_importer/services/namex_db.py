@@ -36,11 +36,11 @@
 from cloud_sql_connector import DBConfig, TCPDBConfig
 from flask import Flask
 
-from namex_solr_importer.services.base_db import BaseDB
+from namex_solr_importer.services.base_db import BaseDB, PasswordDBConfig
 
 
 class NamexDB:  # pylint: disable=duplicate-code
-    """NameX db connection (auto-detects Cloud SQL Connector vs TCP mode)."""
+    """NameX db connection."""
 
     def __init__(self, app: Flask | None = None):
         self.db = None
@@ -48,19 +48,14 @@ class NamexDB:  # pylint: disable=duplicate-code
             self.init_app(app)
 
     def init_app(self, app: Flask, test_connection=True):
-        """Initialize with option to skip connection test.
-
-        Auto-detects connection mode:
-        - If DB_CONNECTION_NAME is set → Cloud SQL Connector mode (backward compatible)
-        - If DB_HOST is set → TCP mode (bastion/SSH tunnel)
-        """
+        """Initialize with option to skip connection test."""
         try:
-            # Auto-detect mode based on what's configured
             connection_name = app.config.get("DB_CONNECTION_NAME")
             db_host = app.config.get("DB_HOST")
 
+            if connection_name and app.config.get("DB_TCP_IAM_AUTH", False):
+                raise ValueError("DATABASE_TCP_IAM_AUTH requires DATABASE_CONNECTION_NAME to be unset")
             if connection_name:
-                # Cloud SQL Connector mode (original behavior - backward compatible)
                 db_config = DBConfig(
                     instance_name=connection_name,
                     database=app.config["DB_NAME"],
@@ -69,8 +64,7 @@ class NamexDB:  # pylint: disable=duplicate-code
                     enable_iam_auth=True,
                     schema=app.config.get("DB_SCHEMA", ""),
                 )
-            elif db_host:
-                # TCP mode (bastion/SSH tunnel with IAM token auth)
+            elif db_host and app.config.get("DB_TCP_IAM_AUTH", False):
                 db_config = TCPDBConfig(
                     database=app.config["DB_NAME"],
                     user=app.config["DB_USER"],
@@ -81,6 +75,14 @@ class NamexDB:  # pylint: disable=duplicate-code
                         "GOOGLE_APPLICATION_CREDENTIALS_NAMEX"
                     ),
                     schema=app.config.get("DB_SCHEMA", ""),
+                )
+            elif db_host:
+                db_config = PasswordDBConfig(
+                    database=app.config["DB_NAME"],
+                    user=app.config["DB_USER"],
+                    password=app.config["DB_PASSWORD"],
+                    host=db_host,
+                    port=int(app.config["DB_PORT"]),
                 )
             else:
                 raise ValueError(

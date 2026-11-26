@@ -33,6 +33,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 """Base db connection class."""
 
+from dataclasses import dataclass
+
 import google.auth
 from cloud_sql_connector import (
     DBConfig,
@@ -42,7 +44,19 @@ from cloud_sql_connector import (
 )
 from google.cloud.sql.connector import Connector
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import scoped_session, sessionmaker
+
+
+@dataclass
+class PasswordDBConfig:
+    """Direct PostgreSQL connection configuration."""
+
+    database: str
+    user: str
+    password: str
+    host: str
+    port: int
 
 
 class BaseDB:
@@ -50,7 +64,7 @@ class BaseDB:
 
     def __init__(
         self,
-        db_config: DBConfig | TCPDBConfig,
+        db_config: DBConfig | TCPDBConfig | PasswordDBConfig,
         test_connection=True,
         credentials_path: str | None = None,
     ):
@@ -62,8 +76,21 @@ class BaseDB:
             credentials_path: Credentials file for Cloud SQL Connector mode
         """
         self.connector = None
-        if isinstance(db_config, TCPDBConfig):
-            self.engine = create_engine("postgresql://", **db_config.get_engine_options())
+        if isinstance(db_config, PasswordDBConfig):
+            self.engine = create_engine(
+                URL.create(
+                    "postgresql",
+                    username=db_config.user,
+                    password=db_config.password,
+                    host=db_config.host,
+                    port=db_config.port,
+                    database=db_config.database,
+                )
+            )
+        elif isinstance(db_config, TCPDBConfig):
+            self.engine = create_engine(
+                "postgresql+pg8000://", **db_config.get_engine_options()
+            )
         else:
             credentials = None
             if credentials_path:

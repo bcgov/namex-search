@@ -114,6 +114,7 @@ class Config:
     DB_HOST = os.getenv("DATABASE_HOST", "")
     DB_PORT = os.getenv("DATABASE_PORT", "5432")
     DB_CONNECTION_NAME = os.getenv("DATABASE_CONNECTION_NAME")
+    DB_TCP_IAM_AUTH = os.getenv("DATABASE_TCP_IAM_AUTH", "False") == "True"
     GOOGLE_APPLICATION_CREDENTIALS_NAMEX = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS_NAMEX", "sa-secret/namex/secret.json"
     )
@@ -125,6 +126,7 @@ class Config:
     LEAR_DB_HOST = os.getenv("LEAR_DATABASE_HOST", "")
     LEAR_DB_PORT = os.getenv("LEAR_DATABASE_PORT", "5432")
     LEAR_DB_CONNECTION_NAME = os.getenv("LEAR_DATABASE_CONNECTION_NAME")
+    LEAR_DB_TCP_IAM_AUTH = os.getenv("LEAR_DATABASE_TCP_IAM_AUTH", "False") == "True"
     GOOGLE_APPLICATION_CREDENTIALS_LEAR = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS_LEAR", "sa-secret/lear/secret.json"
     )
